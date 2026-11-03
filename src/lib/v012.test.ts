@@ -147,10 +147,10 @@ describe("settings ui and edge notes", () => {
       version: string;
       manifest_version: number;
     };
-    assert.equal(manifest.version, "0.1.4");
+    assert.equal(manifest.version, "0.1.5");
     assert.equal(manifest.manifest_version, 3);
     for (const doc of [readme, edge]) {
-      assert.match(doc, /0\.1\.4/);
+      assert.match(doc, /0\.1\.5/);
       assert.match(doc, /edge:\/\/extensions/);
       assert.match(doc, /chrome:\/\/extensions/);
       assert.match(doc, /dist\//);

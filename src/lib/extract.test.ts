@@ -57,6 +57,53 @@ describe("extractBlocks", () => {
     assert.equal(result.blocks.length, 1);
     assert.equal(result.truncated, true);
   });
+
+  it("collects a visible card title that is not a p or heading", () => {
+    const { document } = parseHTML(`<body>
+      <nav><a href="/explainers">Explainers</a></nav>
+      <main>
+        <nav><a href="/politics">Politics nav</a></nav>
+        <p>Start Here</p>
+        <ol><li>It's Election Day. You can find <a href="/midterms">Vox's coverage of the midterms here</a>. And the best place to keep up.</li></ol>
+        <div class="card">
+          <span class="kicker">Politics</span>
+          <div class="title-wrap"><a href="/story">What <em>Democrats</em> could actually do if they win Congress</a></div>
+          <p>They've made big promises. Here's a deep dive into what they could actually deliver.</p>
+        </div>
+        <div class="card">
+          <div class="plain-title">Israel's Arab parties could end Netanyahu's rule</div>
+        </div>
+        <a hidden href="/secret">Secret headline that must stay out</a>
+        <pre><div>const secret = "do not translate code"</div></pre>
+      </main>
+    </body>`);
+    const result = extractBlocks(document);
+    const texts = result.blocks.map((block) => block.text);
+    assert.deepEqual(texts, [
+      "Start Here",
+      "It's Election Day. You can find Vox's coverage of the midterms here. And the best place to keep up.",
+      "Politics",
+      "What Democrats could actually do if they win Congress",
+      "They've made big promises. Here's a deep dive into what they could actually deliver.",
+      "Israel's Arab parties could end Netanyahu's rule",
+    ]);
+    const title = result.blocks.find((block) => block.text.startsWith("What Democrats"));
+    const plain = result.blocks.find((block) => block.text.startsWith("Israel's Arab parties"));
+    const item = result.blocks.find((block) => block.text.startsWith("It's Election Day"));
+    assert.equal(title?.anchor.tagName, "A");
+    assert.equal(title?.anchor.getAttribute("href"), "/story");
+    assert.equal(plain?.anchor.tagName, "DIV");
+    assert.equal(plain?.anchor.className, "plain-title");
+    assert.equal(item?.anchor.tagName, "LI");
+    assert.equal(result.blocks.some((block) => block.text === "Vox's coverage of the midterms here"), false);
+    assert.equal(result.blocks.some((block) => block.text.includes("Explainers")), false);
+    assert.equal(result.blocks.some((block) => block.text.includes("Politics nav")), false);
+    assert.equal(result.blocks.some((block) => block.text.includes("Secret headline")), false);
+    assert.equal(result.blocks.some((block) => block.text.includes("do not translate code")), false);
+    const limited = extractBlocks(document, 1);
+    assert.equal(limited.blocks[0]?.text, "Start Here");
+    assert.equal(limited.truncated, true);
+  });
 });
 
 describe("settings and selection", () => {
