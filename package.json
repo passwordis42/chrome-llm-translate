@@ -1,9 +1,9 @@
 {
   "name": "yifan",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "type": "module",
-  "description": "一翻 · Chromium MV3 扩展（Chrome / Edge），用通义千问做划词，并在原页段落下插入整页译文",
+  "description": "一翻 · Chromium MV3 扩展（Chrome / Edge），用通义千问做划词，并在原文字位替换整页译文",
   "engines": {
     "node": ">=22"
   },

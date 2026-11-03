@@ -40,7 +40,7 @@ export function markImg(size: number): HTMLImageElement {
 export function isYifanEvent(event: Event): boolean {
   return event.composedPath().some((node) => {
     if (!(node instanceof HTMLElement)) return false;
-    return HOST_IDS.has(node.id) || node.hasAttribute("data-yifan-inline");
+    return HOST_IDS.has(node.id);
   });
 }
 

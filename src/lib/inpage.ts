@@ -1,114 +1,116 @@
-export interface InlineAnchor {
+/** 整页 AI：原文字位替换，并按可见性分批续翻。不插入段下译文槽。 */
+
+export const PAGE_BATCH_LIMIT = 200;
+
+export const TOOLBAR_META = "译文直接替换原文；下滑自动续翻；清除可还原";
+export const SCROLL_HINT = "继续下滑将自动续翻未译段落（每批最多 200 段）";
+export const CONFIRM_LEAD = "用千问把整页";
+export const CONFIRM_EMPHASIS = "原位替换为译文";
+export const CONFIRM_DETAIL =
+  "可见区直接换成译文；下滑露出新字自动续翻（每批最多 200 段）；可一键清除还原原文。";
+
+export const REPLACED_ATTR = "data-yifan-replaced";
+
+export interface TextSnapshot {
+  anchor: Element;
+  html: string;
+}
+
+export interface ViewportRect {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+  width: number;
+  height: number;
+}
+
+export interface BatchBlock {
   id: string;
   anchor: Element;
 }
 
-const SLOT_STYLE = [
-  "all:initial",
-  "display:block !important",
-  "box-sizing:border-box",
-  "position:static !important",
-  "float:none !important",
-  "clear:both",
-  "top:auto !important",
-  "right:auto !important",
-  "bottom:auto !important",
-  "left:auto !important",
-  "z-index:auto !important",
-  "width:100%",
-  "max-width:100%",
-  "flex:1 0 100%",
-  "grid-column:1 / -1",
-  "margin:8px 0 14px",
-  "padding:8px 12px",
-  "border-left:3px solid #2f6fed",
-  "border-radius:8px",
-  "background:#f4f8ff",
-  "color:#1f2937",
-  'font-family:"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif',
-  "font-size:14px",
-  "line-height:1.65",
-  "white-space:normal",
-  "pointer-events:auto",
-  "user-select:text",
-].join(";");
+/** 替换前记下 innerHTML。同一节点只记一次，避免把译文当成原文。 */
+export function ensureSnapshot(store: Map<Element, TextSnapshot>, anchor: Element): TextSnapshot | null {
+  const existing = store.get(anchor);
+  if (existing) return existing;
+  if (!anchor.isConnected) return null;
+  if (!("innerHTML" in anchor)) return null;
+  const snapshot = { anchor, html: (anchor as HTMLElement).innerHTML };
+  store.set(anchor, snapshot);
+  return snapshot;
+}
 
-const TAG_STYLE = [
-  "all:initial",
-  "display:block",
-  "margin:0 0 4px",
-  "font-family:inherit",
-  "font-size:11px",
-  "font-weight:700",
-  "letter-spacing:0.04em",
-  "line-height:1.4",
-  "color:#2f6fed",
-].join(";");
+/** 在原节点里换上译文。不新增兄弟节点，也不写「译文」标签。 */
+export function replaceInPlace(snapshot: TextSnapshot, text: string): void {
+  const { anchor } = snapshot;
+  if (!anchor.isConnected) return;
+  anchor.textContent = text;
+  anchor.setAttribute(REPLACED_ATTR, "");
+}
 
-const DST_STYLE = [
-  "all:initial",
-  "display:block",
-  "margin:0",
-  "font-family:inherit",
-  "font-size:15px",
-  "font-weight:600",
-  "line-height:1.65",
-  "color:#1f2937",
-  "white-space:pre-wrap",
-  "overflow-wrap:anywhere",
-  "user-select:text",
-].join(";");
+export function restoreSnapshot(snapshot: TextSnapshot): void {
+  const { anchor } = snapshot;
+  if (!anchor.isConnected) return;
+  if ("innerHTML" in anchor) (anchor as HTMLElement).innerHTML = snapshot.html;
+  anchor.removeAttribute(REPLACED_ATTR);
+}
 
-/** 在原节点后面插入译文槽。不改原文、不盖住页面、不锁滚动。 */
-export function insertTranslationsBelow(blocks: readonly InlineAnchor[]): HTMLElement[] {
-  const slots: HTMLElement[] = [];
-  const tail = new Map<Element, Element>();
-  for (const block of blocks) {
-    const anchor = block.anchor;
-    const doc = anchor.ownerDocument;
-    if (!doc?.contains(anchor)) continue;
-    const slot = createInlineSlot(doc, block.id);
-    const after = tail.get(anchor) ?? anchor;
-    const parent = after.parentNode;
-    if (!parent) continue;
-    parent.insertBefore(slot, after.nextSibling);
-    tail.set(anchor, slot);
-    slots.push(slot);
+export function restoreSnapshots(list: readonly TextSnapshot[]): number {
+  let count = 0;
+  for (const snapshot of list) {
+    if (!snapshot.anchor.isConnected) continue;
+    restoreSnapshot(snapshot);
+    count += 1;
   }
-  return slots;
+  return count;
 }
 
-export function inlineTarget(slot: Element): HTMLElement | null {
-  const node = slot.querySelector("[data-yifan-dst]");
-  if (!node || node.nodeType !== 1) return null;
-  return node as HTMLElement;
+/** 按传入顺序收集已替换译文；同一节点只取一次。 */
+export function collectReplacedText(anchors: readonly Element[]): string[] {
+  const seen = new Set<Element>();
+  const parts: string[] = [];
+  for (const anchor of anchors) {
+    if (seen.has(anchor)) continue;
+    seen.add(anchor);
+    if (!anchor.isConnected || !anchor.hasAttribute(REPLACED_ATTR)) continue;
+    const text = anchor.textContent?.trim() ?? "";
+    if (text) parts.push(text);
+  }
+  return parts;
 }
 
-/** 只移除本扩展插入的译文槽，原页节点留在原地。 */
-export function clearInsertedTranslations(root: ParentNode): number {
-  const nodes = [...root.querySelectorAll("[data-yifan-inline]")];
-  for (const node of nodes) node.remove();
-  return nodes.length;
+export function isInViewport(rect: ViewportRect, viewport: { width: number; height: number }): boolean {
+  if (viewport.width <= 0 || viewport.height <= 0) return false;
+  if (rect.width <= 0 && rect.height <= 0) return false;
+  return rect.bottom > 0 && rect.top < viewport.height && rect.right > 0 && rect.left < viewport.width;
 }
 
-function createInlineSlot(doc: Document, id: string): HTMLElement {
-  const slot = doc.createElement("div");
-  slot.setAttribute("data-yifan-inline", id);
-  slot.setAttribute("data-yifan-ignore", "");
-  slot.setAttribute("translate", "no");
-  slot.setAttribute("contenteditable", "false");
-  slot.style.cssText = SLOT_STYLE;
-
-  const tag = doc.createElement("div");
-  tag.textContent = "译文";
-  tag.style.cssText = TAG_STYLE;
-
-  const dst = doc.createElement("div");
-  dst.setAttribute("data-yifan-dst", id);
-  dst.dataset.state = "pending";
-  dst.textContent = "翻译中…";
-  dst.style.cssText = DST_STYLE;
-
-  slot.append(tag, dst);
-  return slot;
+/**
+ * 下一批要翻的段落：当前可见、还没翻、也不在进行中的批次里。
+ * 最多 `limit` 段（默认 200）。调用方把这批标成完成后再次调用，才能拿到下一批——
+ * 满 200 不会把后面的可见段永久丢掉。
+ */
+export function nextVisibleBatch<T extends BatchBlock>(
+  blocks: readonly T[],
+  options: {
+    limit?: number;
+    done?: ReadonlySet<string>;
+    queued?: ReadonlySet<string>;
+    isVisible: (anchor: Element) => boolean;
+  },
+): T[] {
+  const limit = options.limit ?? PAGE_BATCH_LIMIT;
+  if (!Number.isFinite(limit) || limit <= 0) return [];
+  const done = options.done ?? new Set<string>();
+  const queued = options.queued ?? new Set<string>();
+  const batch: T[] = [];
+  for (const block of blocks) {
+    if (batch.length >= limit) break;
+    if (done.has(block.id) || queued.has(block.id)) continue;
+    if (!block.anchor.isConnected) continue;
+    if (!options.isVisible(block.anchor)) continue;
+    batch.push(block);
+  }
+  return batch;
 }
