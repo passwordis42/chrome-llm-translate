@@ -1,5 +1,16 @@
-import { extractBlocks, PAGE_BLOCK_LIMIT, type PageBlock } from "../lib/extract.ts";
-import { clearInsertedTranslations, inlineTarget, insertTranslationsBelow } from "../lib/inpage.ts";
+import { extractBlocks, type PageBlock } from "../lib/extract.ts";
+import {
+  PAGE_BATCH_LIMIT,
+  SCROLL_HINT,
+  TOOLBAR_META,
+  collectReplacedText,
+  ensureSnapshot,
+  isInViewport,
+  nextVisibleBatch,
+  replaceInPlace,
+  restoreSnapshots,
+  type TextSnapshot,
+} from "../lib/inpage.ts";
 import { pairLabel } from "../lib/languages.ts";
 import type { Settings } from "../lib/settings.ts";
 import { copyText, el, markImg, mount } from "./dom.ts";
@@ -11,76 +22,276 @@ export interface PageDeps {
 
 let deps: PageDeps | null = null;
 let barHost: HTMLDivElement | null = null;
-let metaNode: HTMLElement | null = null;
-let outputs: HTMLElement[] = [];
+let hintNode: HTMLElement | null = null;
+let statusNode: HTMLElement | null = null;
 let generation = 0;
 let abort: AbortController | null = null;
-let truncatedNote = false;
+let observer: IntersectionObserver | null = null;
+let pumpTimer = 0;
+let onViewportChange: (() => void) | null = null;
+let pumpAgain = false;
+let stopped = false;
+let lastError = "";
+let tracked: PageBlock[] = [];
+let seen = new Set<string>();
+let done = new Set<string>();
+let queued = new Set<string>();
+let partials = new Map<string, string>();
+let snapshots = new Map<Element, TextSnapshot>();
+let activePump: Promise<void> | null = null;
+let releasePump: (() => void) | null = null;
+const anchorIds = new WeakMap<Element, string>();
+let anchorSeq = 0;
+let idSeq = 0;
 
 export function initPage(next: PageDeps): void {
   deps = next;
 }
 
 export function isInlinePageOpen(): boolean {
-  return barHost != null || document.querySelector("[data-yifan-inline]") != null;
+  return barHost != null;
 }
 
 export function clearInlinePage(): void {
   generation += 1;
   abort?.abort();
   abort = null;
-  outputs = [];
-  truncatedNote = false;
-  clearInsertedTranslations(document);
+  unbindViewport();
+  restoreSnapshots([...snapshots.values()]);
+  snapshots.clear();
+  tracked = [];
+  seen.clear();
+  done.clear();
+  queued.clear();
+  partials.clear();
+  stopped = false;
+  pumpAgain = false;
+  lastError = "";
+  idSeq = 0;
   barHost?.remove();
   barHost = null;
-  metaNode = null;
+  hintNode = null;
+  statusNode = null;
 }
 
 export async function openInlinePage(): Promise<"empty" | "done"> {
+  const previous = activePump;
   clearInlinePage();
   const token = generation;
-  if (!deps) return "done";
-  const extracted = extractBlocks(document);
+  if (previous) await previous;
+  if (token !== generation || !deps) return "done";
+  syncFromDocument();
   if (token !== generation) return "done";
-  if (extracted.blocks.length === 0) return "empty";
-
-  truncatedNote = extracted.truncated;
-  const slots = insertTranslationsBelow(extracted.blocks);
-  outputs = slots
-    .map((slot) => inlineTarget(slot))
-    .filter((node): node is HTMLElement => node != null);
-  const byId = new Map(outputs.map((node) => [node.getAttribute("data-yifan-dst") ?? "", node]));
-  const blocks = extracted.blocks.filter((block) => byId.has(block.id));
-  if (token !== generation) {
-    clearInlinePage();
-    return "done";
-  }
-  if (blocks.length === 0) {
-    clearInlinePage();
-    return "empty";
-  }
-  renderBar(blocks.length);
-  await translateAll(blocks, byId, token);
+  if (tracked.length === 0) return "empty";
+  abort = new AbortController();
+  renderBar(tracked[0]?.text ?? "");
+  bindViewport(token);
+  await pump(token);
   return "done";
 }
 
-function renderBar(total: number): void {
+function anchorKey(anchor: Element): string {
+  let key = anchorIds.get(anchor);
+  if (!key) {
+    anchorSeq += 1;
+    key = `a${anchorSeq}`;
+    anchorIds.set(anchor, key);
+  }
+  return key;
+}
+
+function syncFromDocument(): void {
+  const extracted = extractBlocks(document, Number.POSITIVE_INFINITY);
+  const partIndex = new Map<Element, number>();
+  let added = false;
+  for (const block of extracted.blocks) {
+    const index = partIndex.get(block.anchor) ?? 0;
+    partIndex.set(block.anchor, index + 1);
+    const key = `${anchorKey(block.anchor)}#${index}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    tracked.push({ id: `b${idSeq}`, text: block.text, anchor: block.anchor });
+    idSeq += 1;
+    observer?.observe(block.anchor);
+    added = true;
+  }
+  if (!added) return;
+  tracked.sort((left, right) => {
+    if (left.anchor === right.anchor) return 0;
+    const position = left.anchor.compareDocumentPosition(right.anchor);
+    if (position & Node.DOCUMENT_POSITION_FOLLOWING) return -1;
+    if (position & Node.DOCUMENT_POSITION_PRECEDING) return 1;
+    return 0;
+  });
+}
+
+function elementVisible(anchor: Element): boolean {
+  const view = anchor.ownerDocument?.defaultView;
+  if (!view) return false;
+  if (typeof anchor.getBoundingClientRect !== "function") return false;
+  try {
+    const rect = anchor.getBoundingClientRect();
+    return isInViewport(rect, { width: view.innerWidth, height: view.innerHeight });
+  } catch {
+    return false;
+  }
+}
+
+function bindViewport(token: number): void {
+  onViewportChange = () => {
+    if (token !== generation || stopped) return;
+    schedulePump(token);
+  };
+  document.addEventListener("scroll", onViewportChange, true);
+  window.addEventListener("resize", onViewportChange);
+  if (typeof IntersectionObserver === "function") {
+    observer = new IntersectionObserver((entries) => {
+      if (token !== generation || stopped) return;
+      if (!entries.some((entry) => entry.isIntersecting)) return;
+      schedulePump(token);
+    });
+    for (const block of tracked) observer.observe(block.anchor);
+  }
+}
+
+function unbindViewport(): void {
+  if (onViewportChange) {
+    document.removeEventListener("scroll", onViewportChange, true);
+    window.removeEventListener("resize", onViewportChange);
+    onViewportChange = null;
+  }
+  observer?.disconnect();
+  observer = null;
+  window.clearTimeout(pumpTimer);
+  pumpTimer = 0;
+}
+
+function schedulePump(token: number): void {
+  window.clearTimeout(pumpTimer);
+  pumpTimer = window.setTimeout(() => {
+    void pump(token);
+  }, 150);
+}
+
+async function pump(token: number): Promise<void> {
+  if (token !== generation || stopped || !abort) return;
+  if (activePump) {
+    pumpAgain = true;
+    return;
+  }
+  activePump = new Promise((resolve) => {
+    releasePump = resolve;
+  });
+  try {
+    syncFromDocument();
+    while (token === generation && !stopped) {
+      const batch = nextVisibleBatch(tracked, {
+        limit: PAGE_BATCH_LIMIT,
+        done,
+        queued,
+        isVisible: elementVisible,
+      });
+      if (batch.length === 0) {
+        const pending = tracked.some((block) => !done.has(block.id));
+        setHint(pending, token);
+        if (!stopped) {
+          if (lastError) setStatus(lastError, token, "error");
+          else setStatus(pending ? "" : "本页可译段落已替换。", token, "idle");
+        }
+        break;
+      }
+      for (const block of batch) queued.add(block.id);
+      setHint(true, token);
+      await translateBatch(batch, token);
+      syncFromDocument();
+    }
+  } finally {
+    const release = releasePump;
+    releasePump = null;
+    activePump = null;
+    release?.();
+    if (token === generation) {
+      const pending = tracked.some((block) => !done.has(block.id));
+      setHint(pending, token);
+    }
+    if (token === generation && pumpAgain && !stopped) {
+      pumpAgain = false;
+      void pump(token);
+    }
+  }
+}
+
+async function translateBatch(batch: readonly PageBlock[], token: number): Promise<void> {
+  if (!deps || !abort) return;
+  const signal = abort.signal;
+  for (let index = 0; index < batch.length; index += 1) {
+    if (token !== generation || signal.aborted || stopped) return;
+    const block = batch[index];
+    if (!block) continue;
+    setStatus(`正在翻译可见区 ${index + 1}/${batch.length}`, token, "run");
+    const settings = deps.getSettings();
+    try {
+      await requestTranslation(
+        block.text,
+        { sourceLang: settings.sourceLang, targetLang: settings.targetLang },
+        {
+          signal,
+          onText: (text) => {
+            if (token !== generation || !text) return;
+            partials.set(block.id, text);
+            paintAnchor(block.anchor);
+          },
+        },
+      );
+      done.add(block.id);
+      queued.delete(block.id);
+    } catch (error) {
+      queued.delete(block.id);
+      if (token !== generation || signal.aborted || (error as Error).name === "AbortError") return;
+      done.add(block.id);
+      const streamError = error as StreamError;
+      lastError = streamError.message || "翻译失败。不会假翻。";
+      setStatus(lastError, token, "error");
+      if (streamError.fatal !== false) {
+        stopped = true;
+        return;
+      }
+    }
+  }
+}
+
+function paintAnchor(anchor: Element): void {
+  const snapshot = ensureSnapshot(snapshots, anchor);
+  if (!snapshot) return;
+  const text = tracked
+    .filter((block) => block.anchor === anchor)
+    .map((block) => partials.get(block.id) ?? "")
+    .filter((part) => part.trim().length > 0)
+    .map((part) => part.trim())
+    .join("\n\n");
+  if (!text) return;
+  replaceInPlace(snapshot, text);
+}
+
+function renderBar(sample: string): void {
   const settings = deps?.getSettings();
   const mounted = mount("yifan-inline-bar");
   barHost = mounted.host;
   mounted.host.setAttribute("role", "region");
-  mounted.host.setAttribute("aria-label", "一翻整页译文");
+  mounted.host.setAttribute("aria-label", "一翻整页 AI");
 
   const toolbar = el("div", "toolbar inline-bar");
   const left = el("div", "left");
   const titles = el("div");
-  metaNode = el("div", "meta", barStatus("run", 0, total));
-  titles.append(el("h2", undefined, "一翻 · 整页 AI"), metaNode);
+  titles.append(el("h2", undefined, "一翻 · 整页 AI"), el("div", "meta", TOOLBAR_META));
   left.append(markImg(28), titles);
 
   const right = el("div", "right");
-  const chip = el("span", "chip", settings ? pairLabel(settings.sourceLang, settings.targetLang) : "自动 → 中文");
+  const chip = el(
+    "span",
+    "chip",
+    settings ? pairLabel(settings.sourceLang, settings.targetLang, sample) : "自动 → 中文",
+  );
   const copyAll = el("button", "btn primary", "复制全部译文");
   copyAll.type = "button";
   copyAll.addEventListener("click", () => void onCopyAll(copyAll));
@@ -89,78 +300,28 @@ function renderBar(total: number): void {
   clear.addEventListener("click", () => clearInlinePage());
   right.append(chip, copyAll, clear);
   toolbar.append(left, right);
-  mounted.root.append(toolbar);
+
+  hintNode = el("p", "hint", SCROLL_HINT);
+  statusNode = el("p", "status");
+  statusNode.hidden = true;
+  mounted.root.append(toolbar, hintNode, statusNode);
 }
 
-function barStatus(phase: "run" | "done" | "stop", index = 0, total = 0): string {
-  const prefix = truncatedNote ? `只翻译前 ${PAGE_BLOCK_LIMIT} 段 · ` : "";
-  if (phase === "run") return `${prefix}正在翻译 ${index + 1}/${total} · 译文在段落下`;
-  if (phase === "stop") return `${prefix}翻译已停止 · 原文仍在原处`;
-  return `${prefix}译文在段落下 · 原文保留`;
+function setHint(pending: boolean, token: number): void {
+  if (token !== generation || !hintNode?.isConnected) return;
+  hintNode.hidden = !pending;
+  hintNode.textContent = SCROLL_HINT;
 }
 
-function setMeta(text: string, token: number): void {
-  if (token !== generation || !metaNode?.isConnected) return;
-  metaNode.textContent = text;
-}
-
-function setReady(dst: HTMLElement, text: string): void {
-  dst.dataset.state = "ready";
-  dst.style.color = "#1f2937";
-  dst.textContent = text;
-}
-
-function setError(dst: HTMLElement, text: string): void {
-  dst.dataset.state = "error";
-  dst.style.color = "#b42318";
-  dst.textContent = text;
-}
-
-async function translateAll(blocks: PageBlock[], byId: Map<string, HTMLElement>, token: number): Promise<void> {
-  if (!deps) return;
-  const controller = new AbortController();
-  abort = controller;
-  for (let index = 0; index < blocks.length; index += 1) {
-    if (token !== generation || controller.signal.aborted) return;
-    setMeta(barStatus("run", index, blocks.length), token);
-    const block = blocks[index];
-    const dst = byId.get(block.id);
-    if (!dst) continue;
-    const settings = deps.getSettings();
-    try {
-      await requestTranslation(
-        block.text,
-        { sourceLang: settings.sourceLang, targetLang: settings.targetLang },
-        {
-          signal: controller.signal,
-          onText: (text) => {
-            if (token !== generation || !text) return;
-            setReady(dst, text);
-          },
-        },
-      );
-    } catch (error) {
-      if (token !== generation || (error as Error).name === "AbortError") return;
-      const streamError = error as StreamError;
-      setError(dst, streamError.message || "翻译失败。不会假翻。");
-      if (streamError.fatal !== false) {
-        for (let rest = index + 1; rest < blocks.length; rest += 1) {
-          const pending = byId.get(blocks[rest].id);
-          if (!pending || pending.dataset.state === "ready") continue;
-          setError(pending, "已停止。请先到设置检查 Key 或网络——不会假翻。");
-        }
-        setMeta(barStatus("stop"), token);
-        return;
-      }
-    }
-  }
-  setMeta(barStatus("done"), token);
+function setStatus(text: string, token: number, state: "run" | "idle" | "error"): void {
+  if (token !== generation || !statusNode?.isConnected) return;
+  statusNode.hidden = text.length === 0;
+  statusNode.dataset.state = state;
+  statusNode.textContent = text;
 }
 
 async function onCopyAll(button: HTMLButtonElement): Promise<void> {
-  const parts = outputs
-    .filter((node) => node.dataset.state === "ready" && node.textContent?.trim())
-    .map((node) => node.textContent?.trim() ?? "");
+  const parts = collectReplacedText(tracked.map((block) => block.anchor));
   const previous = button.textContent;
   if (parts.length === 0) {
     button.textContent = "暂无译文";

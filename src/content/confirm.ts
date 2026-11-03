@@ -1,3 +1,4 @@
+import { CONFIRM_DETAIL, CONFIRM_EMPHASIS, CONFIRM_LEAD } from "../lib/inpage.ts";
 import { el, lockPageScroll, markImg, mount, unlockPageScroll } from "./dom.ts";
 
 let closeCurrent: ((value: boolean) => void) | null = null;
@@ -47,13 +48,13 @@ export function showConfirm(mode: "ai" | "google"): Promise<boolean> {
     const body = el("div", "body");
     const message = el("p", "msg");
     if (mode === "ai") {
-      message.append("用千问在段落下方插入", el("strong", undefined, "译文"), "？");
+      message.append(CONFIRM_LEAD, el("strong", undefined, CONFIRM_EMPHASIS), "？");
     } else {
       message.append("用浏览器自带", el("strong", undefined, "谷歌翻译"), "整页？");
     }
     const detail = el("div", "detail");
     if (mode === "ai") {
-      detail.textContent = "原文留在原网页里，译文跟在段落下。没有全屏盖层，也不锁滚动。可随时清除；取消则无任何改动。";
+      detail.textContent = CONFIRM_DETAIL;
     } else {
       detail.append(
         "只尝试唤起浏览器自带的原页翻译，留在当前页。",

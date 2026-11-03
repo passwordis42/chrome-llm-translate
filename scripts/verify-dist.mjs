@@ -10,7 +10,7 @@ function check(condition, message) {
 
 check(manifest.manifest_version === 3, "manifest_version");
 check(manifest.name === "一翻", "name");
-check(manifest.version === "0.1.2", "version");
+check(manifest.version === "0.1.3", "version");
 check(manifest.background?.service_worker === "background.js", "service worker");
 check(manifest.content_scripts?.[0]?.js?.[0] === "content.js", "content script");
 check(manifest.action?.default_popup === "popup.html", "popup");
@@ -38,7 +38,15 @@ check(content.includes("一翻 · 划词"), "float title");
 check(content.includes("一翻 · 确认翻译"), "selection confirm title");
 check(content.includes("关闭确认条"), "selection confirm close label");
 check(content.includes("清除译文"), "inline clear control");
-check(content.includes("data-yifan-inline"), "inline slot marker");
+check(content.includes("复制全部译文"), "copy all translations");
+check(content.includes("译文直接替换原文；下滑自动续翻；清除可还原"), "toolbar meta");
+check(content.includes("继续下滑将自动续翻未译段落（每批最多 200 段）"), "scroll hint");
+check(content.includes("原位替换为译文"), "confirm emphasis");
+check(content.includes("可见区直接换成译文；下滑露出新字自动续翻（每批最多 200 段）；可一键清除还原原文。"), "confirm detail");
+check(content.includes("data-yifan-replaced"), "in-place marker");
+check(!content.includes("data-yifan-inline"), "no inline slot marker");
+check(!content.includes("退出对照"), "no exit-bilingual control");
+check(!content.includes("段落下方"), "no below-paragraph confirm");
 check(!content.includes("整页 AI 对照阅读"), "no side-by-side badge");
 check(!content.includes("yifan-page"), "no overlay host");
 check(!content.includes("sk-test"), "no test key baked into the bundle");

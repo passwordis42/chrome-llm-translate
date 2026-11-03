@@ -31,11 +31,24 @@ describe("extractBlocks", () => {
     assert.equal(result.title, "Large language models are changing how we read the web.");
     const texts = result.blocks.map((block) => block.text);
     assert.deepEqual(texts, [
+      "Large language models are changing how we read the web.",
       "When a sentence matters, you can select it and get a careful translation.",
       "Unimportant pages stay untouched until you choose Google Translate yourself.",
       "Nested item should be kept once.",
     ]);
     assert.equal(result.truncated, false);
+  });
+
+  it("skips a paragraph that was already replaced in place", () => {
+    const { document } = parseHTML(`<main>
+      <p id="a">Hello there, this is long enough to be a block of text for extraction.</p>
+      <p id="b">Second paragraph is also long enough to extract as its own block of text.</p>
+    </main>`);
+    document.querySelector("#a")?.setAttribute("data-yifan-replaced", "");
+    const result = extractBlocks(document);
+    assert.deepEqual(result.blocks.map((block) => block.text), [
+      "Second paragraph is also long enough to extract as its own block of text.",
+    ]);
   });
 
   it("flags truncation at the limit", () => {

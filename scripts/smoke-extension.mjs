@@ -58,7 +58,10 @@ try {
     float: Boolean(document.getElementById("yifan-float")),
     confirmBar: Boolean(document.getElementById("yifan-select-confirm")),
     dialog: Boolean(document.getElementById("yifan-dialog")),
-    bilingual: Boolean(document.getElementById("yifan-page")) || Boolean(document.querySelector("[data-yifan-inline]")),
+    bilingual:
+      Boolean(document.getElementById("yifan-page")) ||
+      Boolean(document.querySelector("[data-yifan-inline]")) ||
+      Boolean(document.querySelector("[data-yifan-replaced]")),
     sample: document.querySelector("#sample")?.textContent ?? "",
   }));
   if (early.float || early.confirmBar || early.dialog || early.bilingual) fail(`进页就改了 DOM: ${JSON.stringify(early)}`);
@@ -151,25 +154,33 @@ try {
   const aiCancel = sw.evaluate((id) => chrome.tabs.sendMessage(id, { type: "show-page-ai" }), tabId);
   await page.locator("#yifan-dialog").waitFor({ timeout: 5000 });
   const aiCopy = await shadowText(page, "yifan-dialog");
-  if (!aiCopy.includes("段落下方") || !aiCopy.includes("没有全屏盖层")) fail(`整页 AI 确认文案不对: ${aiCopy}`);
+  if (!aiCopy.includes("原位替换为译文") || !aiCopy.includes("可见区直接换成译文")) {
+    fail(`整页 AI 确认文案不对: ${aiCopy}`);
+  }
+  if (aiCopy.includes("段落下方") || aiCopy.includes("退出对照")) fail(`确认框还是旧文案: ${aiCopy}`);
   await page.locator("#yifan-dialog").screenshot({ path: path.join(shots, "confirm-ai.png") });
   await page.locator("#yifan-dialog").getByRole("button", { name: "取消" }).click();
   await aiCancel;
   await page.waitForTimeout(200);
   if (await page.locator("#yifan-page").count()) fail("取消整页 AI 之后仍然出现盖层");
   if (await page.locator("[data-yifan-inline]").count()) fail("取消整页 AI 之后仍然插入了译文");
+  if (await page.locator("[data-yifan-replaced]").count()) fail("取消整页 AI 之后替换了原文");
   if (page.url() !== pageUrl) fail(`取消后 URL 变了: ${page.url()}`);
 
   const aiRun = sw.evaluate((id) => chrome.tabs.sendMessage(id, { type: "show-page-ai" }), tabId);
   await page.locator("#yifan-dialog").getByRole("button", { name: "确认翻译" }).click();
-  const slot = page.locator("#sample + [data-yifan-inline]");
-  await slot.waitFor({ timeout: 5000 });
-  await page.waitForFunction(() => document.querySelector("#sample + [data-yifan-inline]")?.textContent?.includes("不会假翻"));
-  const slotText = await slot.textContent();
-  if (!slotText?.includes("不会假翻")) fail("没 Key 时译文应写在段落下并明确失败");
-  if (slotText?.includes("插件会把原文")) fail("段下出现了假译文");
+  await page.locator("#yifan-inline-bar").waitFor({ timeout: 5000 });
+  await page.waitForFunction((id) => window.shadowPlain(id).includes("不会假翻"), "yifan-inline-bar");
+  const barText = await shadowText(page, "yifan-inline-bar");
+  if (!barText.includes("译文直接替换原文；下滑自动续翻；清除可还原")) fail(`工具条说明不对: ${barText}`);
+  if (!barText.includes("继续下滑将自动续翻未译段落（每批最多 200 段）")) fail(`工具条没有续翻说明: ${barText}`);
+  if (!barText.includes("复制全部译文") || !barText.includes("清除译文")) fail(`工具条按钮不对: ${barText}`);
+  if (barText.includes("退出对照") || barText.includes("段落下")) fail(`工具条还是旧文案: ${barText}`);
+  if (!barText.includes("不会假翻")) fail("没 Key 时工具条应写明失败");
+  if (await page.locator("[data-yifan-inline]").count()) fail("整页 AI 仍在段落下插译文");
+  if (await page.locator("[data-yifan-replaced]").count()) fail("没 Key 时不应原位替换");
   const sampleText = await page.locator("#sample").textContent();
-  if (!sampleText?.includes("When a sentence matters")) fail("原文段落被替换了");
+  if (!sampleText?.includes("When a sentence matters")) fail("没 Key 时原文被替换了");
   if (sampleText?.includes("不会假翻")) fail("失败提示写进了原文");
   const originalStillThere = await page.locator("article h1").textContent();
   if (!originalStillThere?.includes("Large language models")) fail("原文标题被替换了");
@@ -177,11 +188,13 @@ try {
   const locked = await page.evaluate(() => document.documentElement.style.overflow);
   if (locked === "hidden") fail("整页 AI 锁了页面滚动");
   await page.locator("#stay-link").click();
-  if (!page.url().includes("#still-here")) fail("插入译文后原页链接点不了");
+  if (!page.url().includes("#still-here")) fail("整页 AI 之后原页链接点不了");
   await page.screenshot({ path: path.join(shots, "inline.png") });
   await page.locator("#yifan-inline-bar").getByRole("button", { name: "清除译文" }).click();
-  await page.locator("[data-yifan-inline]").waitFor({ state: "detached", timeout: 3000 });
-  if (await page.locator("#yifan-inline-bar").count()) fail("清除后工具条还在");
+  await page.locator("#yifan-inline-bar").waitFor({ state: "detached", timeout: 3000 });
+  if (await page.locator("[data-yifan-inline]").count() || await page.locator("[data-yifan-replaced]").count()) {
+    fail("清除后页面上还有译文标记");
+  }
   await aiRun;
   if (!(await page.locator("article h1").textContent())?.includes("Large language models")) {
     fail("清除译文后原文没了");
@@ -200,8 +213,12 @@ try {
   await googleCancel;
   if (page.url().includes("translate.google.com")) fail("取消谷歌后跳到了 translate.google.com");
   if (!page.url().startsWith(pageUrl.replace(/#.*$/, ""))) fail("取消谷歌后页面被导航走了");
-  if (await page.locator("#yifan-page").count() || await page.locator("[data-yifan-inline]").count()) {
-    fail("谷歌确认不该插入 LLM 译文");
+  if (
+    await page.locator("#yifan-page").count() ||
+    await page.locator("[data-yifan-inline]").count() ||
+    await page.locator("[data-yifan-replaced]").count()
+  ) {
+    fail("谷歌确认不该插入或替换 LLM 译文");
   }
 
   const beforeGoogle = page.url();
