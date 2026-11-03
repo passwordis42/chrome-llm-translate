@@ -1,0 +1,197 @@
+import { canBrowserTranslate, googleTranslateUrl } from "../lib/google.ts";
+import { TranslateError, missingKeyError } from "../lib/errors.ts";
+import { menuItems } from "../lib/menu.ts";
+import { PORT_NAME, type PortOutbound, type StartMessage, type ToPageMessage, type ToWorkerMessage } from "../lib/messages.ts";
+import { googleCode } from "../lib/languages.ts";
+import { testConnection } from "../lib/qwen.ts";
+import { isModel, readSettings } from "../lib/settings.ts";
+import { runTranslationJob } from "../lib/translate-job.ts";
+
+function setupMenus(): void {
+  chrome.contextMenus.removeAll(() => {
+    for (const item of menuItems()) {
+      chrome.contextMenus.create({
+        id: item.id,
+        ...(item.type === "separator" ? { type: "separator" as const } : { title: item.title }),
+        contexts: item.contexts,
+      } as chrome.contextMenus.CreateProperties);
+    }
+  });
+}
+
+chrome.runtime.onInstalled.addListener(() => {
+  setupMenus();
+  void injectOpenTabs();
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  setupMenus();
+});
+
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  const id = String(info.menuItemId);
+  if (id === "open-settings") {
+    void chrome.runtime.openOptionsPage();
+    return;
+  }
+  void dispatchMenu(id, tab, info.selectionText);
+});
+
+chrome.runtime.onMessage.addListener((message: ToWorkerMessage, sender, sendResponse) => {
+  void handleMessage(message, sender)
+    .then((result) => sendResponse(result))
+    .catch(() => sendResponse({ ok: false, message: "操作失败。没有假翻。" }));
+  return true;
+});
+
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== PORT_NAME) return;
+  const abort = new AbortController();
+  port.onDisconnect.addListener(() => abort.abort());
+  port.onMessage.addListener((message: StartMessage) => {
+    if (!message || message.type !== "start" || typeof message.text !== "string") return;
+    void runPort(port, message, abort.signal);
+  });
+});
+
+async function dispatchMenu(id: string, tab: chrome.tabs.Tab | undefined, selectionText?: string): Promise<void> {
+  const target = tab?.id != null ? tab : await activeTab();
+  if (target?.id == null) return;
+  if (id === "translate-selection") {
+    await deliver(target.id, { type: "translate-selection", text: selectionText ?? "" });
+    return;
+  }
+  if (id === "page-ai") {
+    await deliver(target.id, { type: "show-page-ai" });
+    return;
+  }
+  if (id === "page-google") {
+    await deliver(target.id, { type: "show-page-google" });
+  }
+}
+
+async function deliver(tabId: number, message: ToPageMessage): Promise<void> {
+  try {
+    await chrome.tabs.sendMessage(tabId, message);
+  } catch {
+    try {
+      await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] });
+      await chrome.tabs.sendMessage(tabId, message);
+    } catch {
+      // 特殊页面（商店、PDF、chrome://）不能注入。不翻译。
+    }
+  }
+}
+
+async function injectOpenTabs(): Promise<void> {
+  const tabs = await chrome.tabs.query({ url: ["http://*/*", "https://*/*"] });
+  await Promise.all(
+    tabs.map(async (tab) => {
+      if (tab.id == null) return;
+      try {
+        await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js"] });
+      } catch {
+        // 已丢弃或受保护的标签页。
+      }
+    }),
+  );
+}
+
+async function activeTab(): Promise<chrome.tabs.Tab | undefined> {
+  const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  return tab;
+}
+
+async function handleMessage(message: ToWorkerMessage, sender: chrome.runtime.MessageSender) {
+  if (!message || typeof message !== "object") return { ok: false, message: "无法识别的请求。" };
+  if (message.type === "open-settings") {
+    await chrome.runtime.openOptionsPage();
+    return { ok: true };
+  }
+  if (message.type === "test-connection") {
+    const apiKey = typeof message.apiKey === "string" ? message.apiKey.trim() : "";
+    const model = isModel(message.model) ? message.model : "qwen-plus";
+    if (!apiKey) {
+      const error = missingKeyError("settings");
+      return { ok: false, title: error.title, message: error.message };
+    }
+    try {
+      await testConnection({ apiKey, model });
+      return { ok: true };
+    } catch (error) {
+      return {
+        ok: false,
+        title: error instanceof TranslateError ? error.title : "连接失败",
+        message:
+          error instanceof TranslateError
+            ? error.message
+            : "API Key 无效或网络不可达。请检查后重试——不会假翻。",
+      };
+    }
+  }
+  if (message.type === "google-translate") return openGoogleTranslate(sender);
+  return { ok: false, message: "无法识别的请求。" };
+}
+
+async function openGoogleTranslate(sender: chrome.runtime.MessageSender) {
+  const tab = sender.tab?.id != null ? sender.tab : await activeTab();
+  if (tab?.id == null || !canBrowserTranslate(tab.url)) {
+    return {
+      ok: false,
+      message: "当前页面不能唤起浏览器翻译，只支持普通 http(s) 网页。没有改动页面。",
+    };
+  }
+  const settings = await readSettings();
+  const tabsApi = chrome.tabs as typeof chrome.tabs & {
+    translate?: (tabId: number, options: { targetLanguage: string }) => Promise<void>;
+  };
+  if (typeof tabsApi.translate === "function") {
+    try {
+      await tabsApi.translate(tab.id, { targetLanguage: googleCode(settings.targetLang) });
+      return { ok: true, via: "chrome.tabs.translate" };
+    } catch {
+      // 稳定版没有这个接口，继续走下面的网页翻译。
+    }
+  }
+  try {
+    await chrome.tabs.update(tab.id, {
+      url: googleTranslateUrl(tab.url ?? "", settings.sourceLang, settings.targetLang),
+    });
+    return { ok: true, via: "google-translate-url" };
+  } catch {
+    return {
+      ok: false,
+      message: "Chrome 没有公开的整页翻译接口，打开谷歌翻译页也失败了。没有做 LLM 翻译。",
+    };
+  }
+}
+
+async function runPort(port: chrome.runtime.Port, message: StartMessage, signal: AbortSignal): Promise<void> {
+  const post = (payload: PortOutbound) => {
+    try {
+      port.postMessage(payload);
+    } catch {
+      // 浮层已关。
+    }
+  };
+  try {
+    const settings = await readSettings();
+    await runTranslationJob({
+      text: message.text,
+      settings,
+      sourceLang: message.sourceLang,
+      targetLang: message.targetLang,
+      signal,
+      onText: (text) => post({ type: "text", text }),
+    });
+    if (!signal.aborted) post({ type: "done" });
+  } catch (error) {
+    if (signal.aborted || (error instanceof Error && error.name === "AbortError")) return;
+    post({
+      type: "error",
+      title: error instanceof TranslateError ? error.title : "翻译失败",
+      message: error instanceof Error ? error.message : "翻译失败。不会假翻。",
+      fatal: error instanceof TranslateError ? error.fatal : true,
+    });
+  }
+}

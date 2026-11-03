@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" role="img" aria-label="一翻">
+  <defs><style>@font-face{font-family:'Ma Shan Zheng';src:url('file:///usr/share/fonts/truetype/sand-box/google/Ma%20Shan%20Zheng/MaShanZheng-Regular.ttf') format('truetype');}</style></defs>
+  <rect width="16" height="16" rx="3" fill="#C8102E"/>
+  <rect x="1.5" y="1.5" width="13" height="13" rx="1.5" fill="none" stroke="#F6E8D8" stroke-width="0.9"/>
+  <text x="8" y="12.2" text-anchor="middle" font-family="'Ma Shan Zheng', cursive" font-size="11" fill="#F6E8D8">翻</text>
+</svg>
