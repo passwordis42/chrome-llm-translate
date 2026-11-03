@@ -3,7 +3,7 @@ import { TranslateError, missingKeyError } from "../lib/errors.ts";
 import { menuItems } from "../lib/menu.ts";
 import { PORT_NAME, type PortOutbound, type StartMessage, type ToPageMessage, type ToWorkerMessage } from "../lib/messages.ts";
 import { testConnection } from "../lib/qwen.ts";
-import { isModel, readSettings } from "../lib/settings.ts";
+import { INVALID_MODEL_MESSAGE, isModelId, readSettings } from "../lib/settings.ts";
 import { runTranslationJob } from "../lib/translate-job.ts";
 
 function setupMenus(): void {
@@ -109,7 +109,10 @@ async function handleMessage(message: ToWorkerMessage, sender: chrome.runtime.Me
   }
   if (message.type === "test-connection") {
     const apiKey = typeof message.apiKey === "string" ? message.apiKey.trim() : "";
-    const model = isModel(message.model) ? message.model : "qwen-plus";
+    const model = typeof message.model === "string" ? message.model.trim() : "";
+    if (!isModelId(model)) {
+      return { ok: false, title: "连接失败", message: INVALID_MODEL_MESSAGE };
+    }
     if (!apiKey) {
       const error = missingKeyError("settings");
       return { ok: false, title: error.title, message: error.message };

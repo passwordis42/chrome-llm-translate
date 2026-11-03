@@ -2,8 +2,9 @@ import { dismissConfirm, isConfirmOpen, showConfirm, showNotice } from "./confir
 import { isYifanEvent } from "./dom.ts";
 import { closeSelectionFloat, currentFloatText, initFloat, isFloatOpen, openSelectionFloat, repositionFloat } from "./float.ts";
 import { clearInlinePage, initPage, isInlinePageOpen, openInlinePage } from "./pageview.ts";
+import { closeSelectConfirm, currentSelectConfirmText, isSelectConfirmOpen, openSelectConfirm, repositionSelectConfirm } from "./select-confirm.ts";
 import type { ToPageMessage } from "../lib/messages.ts";
-import { cleanSelection, shouldOfferSelection } from "../lib/selection.ts";
+import { cleanSelection, selectionOffer } from "../lib/selection.ts";
 import { STORAGE_KEY, defaultSettings, normalizeSettings, readSettings, writeSettings } from "../lib/settings.ts";
 import { isTargetLang } from "../lib/languages.ts";
 
@@ -60,6 +61,7 @@ function boot(): void {
   document.addEventListener("mousedown", (event) => {
     if (isYifanEvent(event)) return;
     closeSelectionFloat();
+    closeSelectConfirm();
   }, true);
 
   document.addEventListener("mouseup", (event) => {
@@ -70,6 +72,10 @@ function boot(): void {
   document.addEventListener("keyup", (event) => {
     if (event.key === "Escape") {
       if (isConfirmOpen()) return;
+      if (isSelectConfirmOpen()) {
+        closeSelectConfirm();
+        return;
+      }
       if (isFloatOpen()) {
         closeSelectionFloat();
         return;
@@ -85,18 +91,35 @@ function boot(): void {
 
   document.addEventListener("scroll", () => {
     if (isFloatOpen()) repositionFloat();
+    if (isSelectConfirmOpen()) repositionSelectConfirm();
   }, true);
   window.addEventListener("resize", () => {
     if (isFloatOpen()) repositionFloat();
+    if (isSelectConfirmOpen()) repositionSelectConfirm();
   });
 
   function offerSelection(): void {
-    if (!ready || !settings.selectionEnabled) return;
-    if (isConfirmOpen()) return;
+    if (!ready || isConfirmOpen()) return;
     const active = document.activeElement;
-    if (active && /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName)) return;
+    if (active instanceof HTMLElement) {
+      if (/^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName)) return;
+      if (active.id === "yifan-select-confirm" || active.id === "yifan-float" || active.id === "yifan-dialog") return;
+    }
     const text = cleanSelection(window.getSelection()?.toString() ?? "");
-    if (!shouldOfferSelection(true, text)) return;
+    const action = selectionOffer({
+      selectionEnabled: settings.selectionEnabled,
+      selectionMode: settings.selectionMode,
+      text,
+    });
+    if (action === "none") return;
+    if (action === "confirm") {
+      if (isFloatOpen() && currentFloatText() === text) return;
+      if (isSelectConfirmOpen() && currentSelectConfirmText() === text) return;
+      closeSelectionFloat();
+      openSelectConfirm(text, (confirmed) => openSelectionFloat(confirmed));
+      return;
+    }
+    closeSelectConfirm();
     if (isFloatOpen() && currentFloatText() === text) return;
     openSelectionFloat(text);
   }
@@ -108,11 +131,13 @@ function boot(): void {
       const text = live || cleanSelection(message.text ?? "");
       if (!text) return;
       dismissConfirm();
+      closeSelectConfirm();
       openSelectionFloat(text);
       return;
     }
     if (message.type === "show-page-ai") {
       closeSelectionFloat();
+      closeSelectConfirm();
       const confirmed = await showConfirm("ai");
       if (!confirmed) return;
       const opened = await openInlinePage();
@@ -123,6 +148,7 @@ function boot(): void {
     }
     if (message.type === "show-page-google") {
       closeSelectionFloat();
+      closeSelectConfirm();
       const confirmed = await showConfirm("google");
       if (!confirmed) return;
       const response = (await chrome.runtime.sendMessage({ type: "google-translate" })) as

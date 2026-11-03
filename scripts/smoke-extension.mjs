@@ -56,21 +56,60 @@ try {
   await page.waitForTimeout(600);
   const early = await page.evaluate(() => ({
     float: Boolean(document.getElementById("yifan-float")),
+    confirmBar: Boolean(document.getElementById("yifan-select-confirm")),
     dialog: Boolean(document.getElementById("yifan-dialog")),
     bilingual: Boolean(document.getElementById("yifan-page")) || Boolean(document.querySelector("[data-yifan-inline]")),
     sample: document.querySelector("#sample")?.textContent ?? "",
   }));
-  if (early.float || early.dialog || early.bilingual) fail(`进页就改了 DOM: ${JSON.stringify(early)}`);
+  if (early.float || early.confirmBar || early.dialog || early.bilingual) fail(`进页就改了 DOM: ${JSON.stringify(early)}`);
   if (!early.sample.includes("floating card")) fail("示例页原文丢失");
 
   await selectSample(page, "#sample");
+  await page.locator("#yifan-select-confirm").waitFor({ timeout: 5000 });
+  if (await page.locator("#yifan-float").count()) fail("未点翻译就打开了浮层");
+  const confirmText = await shadowText(page, "yifan-select-confirm");
+  if (!confirmText.includes("一翻 · 确认翻译")) fail(`确认条文案不对: ${confirmText}`);
+  if (!confirmText.includes("When a sentence matters")) fail(`确认条没有原文: ${confirmText}`);
+  await page.locator("#yifan-select-confirm").screenshot({ path: path.join(shots, "select-confirm.png") });
+  await page.locator("#yifan-select-confirm").getByRole("button", { name: "取消" }).click();
+  await page.locator("#yifan-select-confirm").waitFor({ state: "detached", timeout: 3000 });
+  if (await page.locator("#yifan-float").count()) fail("取消确认后仍然打开了浮层");
+
+  await selectSample(page, "#sample");
+  await page.locator("#yifan-select-confirm").waitFor({ timeout: 5000 });
+  await page.locator("#yifan-select-confirm").getByRole("button", { name: "翻译", exact: true }).click();
   await page.locator("#yifan-float").waitFor({ timeout: 5000 });
+  if (await page.locator("#yifan-select-confirm").count()) fail("点翻译后确认条还在");
   await page.waitForFunction((id) => window.shadowPlain(id).includes("不会假翻"), "yifan-float");
   const floatText = await shadowText(page, "yifan-float");
   if (!floatText.includes("不会假翻")) fail(`划词失败提示不对: ${floatText}`);
   if (!floatText.includes("When a sentence matters")) fail(`浮层没有原文: ${floatText}`);
   if (floatText.includes("插件会把")) fail("没有 Key 却出现了假译文");
   await page.locator("#yifan-float").screenshot({ path: path.join(shots, "float-error.png") });
+  await page.locator("#yifan-float").getByRole("button", { name: "关闭" }).click();
+  await page.locator("#yifan-float").waitFor({ state: "detached", timeout: 3000 });
+
+  await sw.evaluate(async () => {
+    const bag = await chrome.storage.local.get("yifan.settings.v1");
+    const current = bag["yifan.settings.v1"] ?? {
+      apiKey: "",
+      model: "qwen3.7-plus",
+      sourceLang: "auto",
+      targetLang: "zh",
+      selectionEnabled: true,
+      glossary: [],
+    };
+    current.selectionMode = "immediate";
+    current.selectionEnabled = true;
+    await chrome.storage.local.set({ "yifan.settings.v1": current });
+  });
+  await page.waitForTimeout(200);
+  await selectSample(page, "#second");
+  await page.locator("#yifan-float").waitFor({ timeout: 5000 });
+  if (await page.locator("#yifan-select-confirm").count()) fail("划完即翻仍然先出确认条");
+  const immediateText = await shadowText(page, "yifan-float");
+  if (!immediateText.includes("Unimportant pages")) fail(`划完即翻没有带上选区: ${immediateText}`);
+  if (!immediateText.includes("不会假翻")) fail("划完即翻不该假翻");
   await page.locator("#yifan-float").getByRole("button", { name: "关闭" }).click();
   await page.locator("#yifan-float").waitFor({ state: "detached", timeout: 3000 });
 
@@ -90,6 +129,7 @@ try {
   await selectSample(page, "#second");
   await page.waitForTimeout(400);
   if (await page.locator("#yifan-float").count()) fail("关掉划词之后仍然弹出");
+  if (await page.locator("#yifan-select-confirm").count()) fail("关掉划词之后仍然出确认条");
 
   const tabId = await tabIdFor(sw, pageUrl);
   await page.evaluate(() => getSelection()?.removeAllRanges());
@@ -184,14 +224,19 @@ try {
   }
   await googleRun;
 
+  await sw.evaluate(async () => chrome.storage.local.remove("yifan.settings.v1"));
   const popup = await context.newPage();
   await popup.goto(`chrome-extension://${extensionId}/popup.html`);
   await popup.getByRole("heading", { name: "一翻" }).waitFor();
+  const defaultModel = await popup.locator("#model").inputValue();
+  if (defaultModel !== "qwen3.7-plus") fail(`默认模型不是 qwen3.7-plus: ${defaultModel}`);
+  const confirmPressed = await popup.locator("#mode-confirm").getAttribute("aria-pressed");
+  if (confirmPressed !== "true") fail("默认划词模式不是先确认再翻");
   await popup.screenshot({ path: path.join(shots, "settings.png") });
   await popup.getByRole("button", { name: "测试连接" }).click();
   await popup.getByText("请先填写 API Key。不会假翻。").waitFor();
   await popup.locator("#api-key").fill("sk-invalid-smoke-key");
-  await popup.locator("#model").selectOption("qwen-turbo");
+  await popup.locator("#custom-model").fill("qwen-turbo");
   const testDone = popup.waitForFunction(() => {
     const button = document.querySelector("#test");
     const errBox = document.querySelector("#err");
@@ -227,7 +272,8 @@ try {
   const stored = await sw.evaluate(async () => chrome.storage.local.get("yifan.settings.v1"));
   const saved = stored["yifan.settings.v1"];
   if (saved.apiKey !== "sk-invalid-smoke-key") fail("Key 没有写进本地存储");
-  if (saved.model !== "qwen-turbo") fail("模型没有保存");
+  if (saved.model !== "qwen-turbo") fail(`手填旧模型没有保存: ${saved.model}`);
+  if (saved.selectionMode !== "confirm") fail(`划词模式被清掉了: ${saved.selectionMode}`);
   if (saved.glossary?.length) fail("删掉的术语还在");
   await sw.evaluate(async () => chrome.storage.local.remove("yifan.settings.v1"));
 

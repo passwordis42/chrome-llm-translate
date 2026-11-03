@@ -29,6 +29,10 @@ export function missingKeyError(where: "settings" | "float"): TranslateError {
 export function httpFailure(where: "settings" | "float", status: number, body: string, apiKey: string): TranslateError {
   const detail = sanitizeDetail(extractApiMessage(body), apiKey);
   if (status === 401 || status === 403) {
+    const modelDenied = status === 403 && detail.length > 0 && !/api[- ]?key|unauthorized/i.test(detail);
+    if (modelDenied) {
+      return new TranslateError("auth", titleFor(where), `${detail}——不会假翻。`, true);
+    }
     return new TranslateError("auth", titleFor(where), bodyFor(where), true);
   }
   if (status === 429) {

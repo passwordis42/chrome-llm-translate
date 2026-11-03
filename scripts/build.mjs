@@ -2,7 +2,7 @@ import { cp, mkdir, rm } from "node:fs/promises";
 import esbuild from "esbuild";
 import sharp from "sharp";
 
-const banner = "/* 一翻 v0.1.1 · 本地 Key · 直连通义千问 · 进页不自动翻 */";
+const banner = "/* 一翻 v0.1.2 · 本地 Key · 直连通义千问 · 进页不自动翻 */";
 
 await rm("dist", { recursive: true, force: true });
 await mkdir("dist/icons", { recursive: true });
@@ -49,4 +49,4 @@ for (const size of [16, 32, 48]) {
     .toFile(`dist/icons/icon${size}.png`);
 }
 
-console.log("built dist/ for chrome://extensions → Load unpacked");
+console.log("built dist/ — load unpacked in Chrome (chrome://extensions) or Edge (edge://extensions)");
