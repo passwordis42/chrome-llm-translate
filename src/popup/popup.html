@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light" />
+  <title>一翻</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="popup" id="settings-view">
+    <div class="hd">
+      <img class="logo" src="icons/icon128.png" width="28" height="28" alt="" />
+      <div>
+        <h1>一翻</h1>
+        <div class="sub">通义千问 · Chrome 扩展设置</div>
+      </div>
+    </div>
+    <div class="body">
+      <div class="field">
+        <div class="label"><span>API Key</span><span class="hint">本地存储，直连千问</span></div>
+        <input id="api-key" type="password" autocomplete="off" spellcheck="false" placeholder="sk-" aria-label="API Key" />
+      </div>
+      <div class="field">
+        <div class="label"><span>模型</span></div>
+        <select id="model" aria-label="模型">
+          <option value="qwen-plus">qwen-plus</option>
+          <option value="qwen-turbo">qwen-turbo</option>
+          <option value="qwen-max">qwen-max</option>
+        </select>
+      </div>
+      <div class="row2">
+        <div class="field">
+          <div class="label"><span>源语言</span></div>
+          <select id="source-lang" aria-label="源语言"></select>
+        </div>
+        <div class="field">
+          <div class="label"><span>目标语言</span></div>
+          <select id="target-lang" aria-label="目标语言"></select>
+        </div>
+      </div>
+      <div class="toggle-row">
+        <div>
+          <div class="t-title">划词翻译</div>
+          <div class="t-desc">选中文本弹出双语浮层（默认开）</div>
+        </div>
+        <button class="switch" id="selection-toggle" type="button" role="switch" aria-checked="true" aria-label="划词翻译"></button>
+      </div>
+      <button class="link-btn" id="open-glossary" type="button">
+        术语本
+        <span>固定译法优先 →</span>
+      </button>
+      <div class="actions">
+        <button class="btn" id="test" type="button">测试连接</button>
+        <button class="btn primary" id="save" type="button">保存</button>
+      </div>
+      <div class="err" id="err" role="alert" hidden>
+        <div>
+          <strong id="err-title">连接失败</strong>
+          <span id="err-body">API Key 无效或网络不可达。请检查后重试——不会假翻。</span>
+        </div>
+      </div>
+      <div class="ok" id="ok" role="status" hidden>
+        <strong id="ok-title">已保存</strong>
+        <span id="ok-body"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" id="glossary-view" hidden>
+    <div class="hd">
+      <div class="hd-left">
+        <img class="logo" src="icons/icon128.png" width="28" height="28" alt="" />
+        <div>
+          <h1>术语本</h1>
+          <div class="sub">固定译法 · 命中优先于模型</div>
+        </div>
+      </div>
+      <button class="close" id="close-glossary" type="button" aria-label="关闭">×</button>
+    </div>
+    <div class="body">
+      <div class="notice">翻译时若原文命中术语，<strong>优先使用固定译法</strong>，再交给千问处理其余部分。</div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>原文</th><th>固定译法</th><th></th></tr>
+          </thead>
+          <tbody id="glossary-rows"></tbody>
+        </table>
+      </div>
+      <p class="glossary-error" id="glossary-error" hidden></p>
+      <div class="add">
+        <input id="term-source" placeholder="原文（如 API key）" aria-label="新增原文" maxlength="80" />
+        <input id="term-target" placeholder="固定译法" aria-label="新增译法" maxlength="200" />
+        <button class="btn primary" id="add-term" type="button">添加</button>
+      </div>
+      <p class="empty">列表为空时：暂无术语，添加后划词与整页 AI 均会优先命中。</p>
+    </div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,27 @@
+{
+  "name": "yifan",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "一翻 · Chrome MV3 扩展，用通义千问做划词与整页双语翻译",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test --test-reporter spec src/lib/*.test.ts",
+    "verify": "node scripts/verify-dist.mjs",
+    "smoke": "node scripts/smoke-extension.mjs",
+    "check": "npm test && npm run typecheck && npm run build && npm run verify"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.1.4",
+    "@types/node": "^22.10.0",
+    "esbuild": "^0.25.0",
+    "linkedom": "^0.18.9",
+    "playwright-core": "^1.64.1",
+    "sharp": "^0.34.1",
+    "typescript": "^5.8.3"
+  }
+}
