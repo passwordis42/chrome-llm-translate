@@ -39,6 +39,8 @@ export interface Settings {
   targetLang: string;
   selectionEnabled: boolean;
   selectionMode: SelectionMode;
+  /** 打开后才强制放开站点禁划选的正文。新装默认关。 */
+  forceSelectEnabled: boolean;
   glossary: GlossaryEntry[];
 }
 
@@ -61,6 +63,7 @@ export function defaultSettings(): Settings {
     targetLang: "zh",
     selectionEnabled: true,
     selectionMode: "confirm",
+    forceSelectEnabled: false,
     glossary: [],
   };
 }
@@ -107,6 +110,7 @@ export function normalizeSettings(raw: unknown): Settings {
     targetLang: isTargetLang(record.targetLang) ? record.targetLang : base.targetLang,
     selectionEnabled: typeof record.selectionEnabled === "boolean" ? record.selectionEnabled : true,
     selectionMode: normalizeSelectionMode(record.selectionMode),
+    forceSelectEnabled: record.forceSelectEnabled === true,
     glossary: normalizeGlossary(record.glossary),
   };
 }

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "一翻",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "用通义千问做划词与整页翻译。划词默认先确认；译文原位替换；谷歌不跳转。进页不自动翻。",
   "minimum_chrome_version": "116",
   "icons": {
@@ -31,7 +31,7 @@
     {
       "matches": ["http://*/*", "https://*/*"],
       "js": ["content.js"],
-      "run_at": "document_idle",
+      "run_at": "document_start",
       "all_frames": false
     }
   ],

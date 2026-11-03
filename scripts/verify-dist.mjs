@@ -10,7 +10,8 @@ function check(condition, message) {
 
 check(manifest.manifest_version === 3, "manifest_version");
 check(manifest.name === "一翻", "name");
-check(manifest.version === "0.1.3", "version");
+check(manifest.version === "0.1.4", "version");
+check(manifest.content_scripts?.[0]?.run_at === "document_start", "content script starts early enough to beat select bans");
 check(manifest.background?.service_worker === "background.js", "service worker");
 check(manifest.content_scripts?.[0]?.js?.[0] === "content.js", "content script");
 check(manifest.action?.default_popup === "popup.html", "popup");
@@ -50,6 +51,8 @@ check(!content.includes("段落下方"), "no below-paragraph confirm");
 check(!content.includes("整页 AI 对照阅读"), "no side-by-side badge");
 check(!content.includes("yifan-page"), "no overlay host");
 check(!content.includes("sk-test"), "no test key baked into the bundle");
+check(content.includes("yifan-force-select"), "force-select style id");
+check(content.includes("-webkit-user-select"), "webkit user-select override");
 
 const popup = readFileSync("dist/popup.html", "utf8");
 check(popup.includes("先确认再翻"), "confirm mode copy");
@@ -57,6 +60,12 @@ check(popup.includes("划完即翻"), "immediate mode copy");
 check(popup.includes("qwen3.7-plus"), "default curated model");
 check(popup.includes("快速便宜") && popup.includes("均衡") && popup.includes("能力高"), "model tier labels");
 check(!popup.includes('value="qwen-turbo"') && !popup.includes('value="qwen-plus"') && !popup.includes('value="qwen-max"'), "legacy ids stay out of the curated select");
+check(popup.includes("允许划选被禁文字"), "force-select title");
+check(popup.includes("站点禁划选时强制放开，方便划词；默认关，进禁选页再开"), "force-select description");
+check(popup.includes('class="new-tag"'), "force-select new tag");
+check(popup.includes('id="force-select-toggle"'), "force-select toggle");
+check(popup.includes('aria-checked="false"'), "force-select defaults off");
+check(popup.includes("允许划选被禁文字，已关闭"), "force-select closed label");
 
 const background = readFileSync("dist/background.js", "utf8");
 check(background.includes("dashscope.aliyuncs.com"), "qwen endpoint bundled");
