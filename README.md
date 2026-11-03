@@ -1,6 +1,6 @@
 # 一翻
 
-Chrome 扩展（Manifest V3）**v0.1.0**。用你自己的通义千问 API Key 做划词双语和整页并排翻译。不重要的整页可以确认后走浏览器翻译。进页不自动翻，没有自建后端。
+Chrome 扩展（Manifest V3）**v0.1.1**。用你自己的通义千问 API Key 做划词翻译，并在原网页段落下方插入整页译文。不重要的整页可以确认后尝试浏览器自带翻译（留在原页，不跳转）。进页不自动翻，没有自建后端。
 
 需求见 [docs/PRD.md](docs/PRD.md)。
 
@@ -51,8 +51,8 @@ Key 存在 `chrome.storage.local`，只从扩展的 service worker 发到千问�
 | 能力 | 怎么用 |
 | --- | --- |
 | 划词翻译（默认开） | 选中网页文字，浮层里原文 + 流式译文。可复制译文、改目标语言、关闭。设置里关掉之后，选中不再弹出。 |
-| 整页 AI | 右键「整页 AI 翻译…」，或工具栏图标右键。确认后才跑。按段落文内并排，不替换原文，可退出对照，可复制全部译文。 |
-| 整页谷歌 | 右键「整页谷歌翻译…」。确认后才动。取消没有任何改动，也不做 LLM 双语卡。 |
+| 整页 AI | 右键「整页 AI 翻译…」，或工具栏图标右键。确认后才跑。原文留在原处，译文插在段落下。没有全屏盖层，不锁滚动。可清除译文，可复制全部译文。 |
+| 整页谷歌 | 右键「整页谷歌翻译…」。确认后才动。只尝试唤起浏览器原页翻译；调不了就提示失败，不打开 translate.google.com，也不做 LLM 双语卡。 |
 | 术语本 | 设置里「术语本」。固定译法优先：先换成占位符再交给模型，流式结果里换回你的译法。 |
 | 右键 | 翻译选中内容 / 整页 AI 翻译… / 整页谷歌翻译… / 打开设置。 |
 | 失败 | 浮层或设置底部红条。无效 Key、断网、超时都停下来，不假翻。 |
@@ -61,23 +61,23 @@ Key 存在 `chrome.storage.local`，只从扩展的 service worker 发到千问�
 
 ## 谷歌翻译的限制
 
-Chrome 没有公开接口可以唤起地址栏那颗「翻译此页」。确认之后的做法：
+整页谷歌确认后留在原页，**不**打开 `translate.google.com`。
 
-1. 若运行中的 Chrome 真有 `chrome.tabs.translate`，就调用它。
-2. 否则把当前 http(s) 页导航到 `https://translate.google.com/translate?sl&tl&u=`。这是谷歌的网页翻译，和 Chrome 自带翻译同一引擎，**不是**千问双语卡。浏览器后退可以回到原页。
-3. `chrome://`、扩展商店、PDF 等页面不能注入确认框，也不会被偷偷导航。
+1. 若运行中的 Chrome 提供 `chrome.tabs.translate`，就用它唤起浏览器自带的原页翻译。
+2. 没有这个接口，或调用失败：弹出失败说明，页面保持原样。
+3. `chrome://`、扩展商店、PDF 等页面不能注入确认框，也不会被导航。
 
 ## 开发
 
 ```bash
-npm test          # 术语本、SSE、失败不假翻、抽段、菜单文案
+npm test          # 术语本、SSE、失败不假翻、抽段、段下插、谷歌不跳转、菜单文案
 npm run typecheck
 npm run build     # 产出 dist/
 npm run verify    # 检查 dist 能被 node --check
 npm run check     # 上面全部
 ```
 
-`npm run smoke` 会用本机 Chrome for Testing 打开 `dev/sample.html`，检查进页不自动翻、划词失败不假翻、确认后才并排、取消无副作用、设置和术语本。品牌版 Chrome 从 137 起忽略命令行 `--load-extension`，脚本默认找 `YIFAN_CHROME`（否则 `/tmp/cft/chrome-linux64/chrome`）。日常加载仍用 `chrome://extensions` 的「加载已解压的扩展程序」。
+`npm run smoke` 会用本机 Chrome for Testing 打开 `dev/sample.html`，检查进页不自动翻、划词失败不假翻、确认后才在段落下插入译文、清除后原页仍可点击、谷歌确认不跳转、设置和术语本。品牌版 Chrome 从 137 起忽略命令行 `--load-extension`，脚本默认找 `YIFAN_CHROME`（否则 `/tmp/cft/chrome-linux64/chrome`）。日常加载仍用 `chrome://extensions` 的「加载已解压的扩展程序」。
 
 图标用定稿 **B1** 朱红印（`#C8102E`，马善政「翻」）：`assets/brand-seal/icon-b1-128.png` / `icon-b1-512.png`。构建时生成 16 / 32 / 48，128 直接用定稿。`assets/brand/icon-a-*` 与 B1 是同一枚印，设置页和浮层用它。
 

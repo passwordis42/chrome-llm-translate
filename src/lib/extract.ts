@@ -1,6 +1,8 @@
 export interface PageBlock {
   id: string;
   text: string;
+  /** 译文插在这个节点后面。节点里的原文不动。 */
+  anchor: Element;
 }
 
 export interface ExtractResult {
@@ -10,11 +12,11 @@ export interface ExtractResult {
 }
 
 const BLOCK_SELECTOR = "h1,h2,h3,h4,h5,h6,p,li,blockquote,figcaption,dd";
-const SKIP_CLOSEST = "nav,footer,aside,[role='navigation'],[role='contentinfo'],#yifan-float,#yifan-dialog,#yifan-page,[data-yifan-ignore]";
-const DEFAULT_LIMIT = 60;
+const SKIP_CLOSEST = "nav,footer,aside,[role='navigation'],[role='contentinfo'],#yifan-float,#yifan-dialog,#yifan-inline-bar,[data-yifan-ignore],[data-yifan-inline]";
+export const PAGE_BLOCK_LIMIT = 60;
 const MAX_BLOCK_CHARS = 1800;
 
-export function extractBlocks(doc: Document, limit = DEFAULT_LIMIT): ExtractResult {
+export function extractBlocks(doc: Document, limit = PAGE_BLOCK_LIMIT): ExtractResult {
   const root = pickRoot(doc);
   const nodes = [...root.querySelectorAll(BLOCK_SELECTOR)];
   const blocks: PageBlock[] = [];
@@ -37,7 +39,7 @@ export function extractBlocks(doc: Document, limit = DEFAULT_LIMIT): ExtractResu
         truncated = true;
         break;
       }
-      blocks.push({ id: `b${blocks.length}`, text: part });
+      blocks.push({ id: `b${blocks.length}`, text: part, anchor: node });
     }
     if (truncated) break;
   }

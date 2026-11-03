@@ -1,6 +1,6 @@
 import cssText from "./content.css";
 
-const HOST_IDS = new Set(["yifan-float", "yifan-dialog", "yifan-page"]);
+const HOST_IDS = new Set(["yifan-float", "yifan-dialog", "yifan-inline-bar"]);
 
 export function mount(id: string): { host: HTMLDivElement; root: ShadowRoot } {
   document.getElementById(id)?.remove();
@@ -38,7 +38,10 @@ export function markImg(size: number): HTMLImageElement {
 }
 
 export function isYifanEvent(event: Event): boolean {
-  return event.composedPath().some((node) => node instanceof HTMLElement && HOST_IDS.has(node.id));
+  return event.composedPath().some((node) => {
+    if (!(node instanceof HTMLElement)) return false;
+    return HOST_IDS.has(node.id) || node.hasAttribute("data-yifan-inline");
+  });
 }
 
 let scrollLocks = 0;

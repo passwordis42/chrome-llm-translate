@@ -47,21 +47,25 @@ export function showConfirm(mode: "ai" | "google"): Promise<boolean> {
     const body = el("div", "body");
     const message = el("p", "msg");
     if (mode === "ai") {
-      message.append("用千问翻译整页为", el("strong", undefined, "并排双语"), "？");
+      message.append("用千问在段落下方插入", el("strong", undefined, "译文"), "？");
     } else {
       message.append("用浏览器自带", el("strong", undefined, "谷歌翻译"), "整页？");
     }
     const detail = el("div", "detail");
     if (mode === "ai") {
-      detail.textContent = "按段落保留原文，右侧流式生成译文。不会替换网页原文；取消则无任何改动。";
+      detail.textContent = "原文留在原网页里，译文跟在段落下。没有全屏盖层，也不锁滚动。可随时清除；取消则无任何改动。";
     } else {
-      detail.append("将唤起 Chrome 自带翻译。", el("em", undefined, "不做"), " LLM 双语对照；取消则无副作用。");
+      detail.append(
+        "只尝试唤起浏览器自带的原页翻译，留在当前页。",
+        el("em", undefined, "不跳转"),
+        "到 translate.google.com，也不做 LLM 双语。取消则无副作用。",
+      );
     }
 
     const actionRow = el("div", "actions");
     const cancel = el("button", "btn", "取消");
     cancel.type = "button";
-    const ok = el("button", mode === "google" ? "btn primary google" : "btn primary", mode === "ai" ? "确认翻译" : "打开谷歌翻译");
+    const ok = el("button", mode === "google" ? "btn primary google" : "btn primary", mode === "ai" ? "确认翻译" : "唤起页面翻译");
     ok.type = "button";
     cancel.addEventListener("click", () => finish(false));
     ok.addEventListener("click", () => finish(true));

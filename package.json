@@ -1,9 +1,9 @@
 {
   "name": "yifan",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
-  "description": "一翻 · Chrome MV3 扩展，用通义千问做划词与整页双语翻译",
+  "description": "一翻 · Chrome MV3 扩展，用通义千问做划词，并在原页段落下插入整页译文",
   "engines": {
     "node": ">=22"
   },

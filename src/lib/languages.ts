@@ -2,7 +2,7 @@ export interface LanguageOption {
   code: string;
   /** 设置页下拉文案 */
   label: string;
-  /** 浮层 / 并排顶栏短标签 */
+  /** 浮层短标签 */
   short: string;
   /** 写进提示词的语言名 */
   promptName: string;

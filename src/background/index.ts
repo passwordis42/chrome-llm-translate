@@ -1,8 +1,7 @@
-import { canBrowserTranslate, googleTranslateUrl } from "../lib/google.ts";
+import { decideGooglePage, GOOGLE_IN_PAGE_FAILED } from "../lib/google.ts";
 import { TranslateError, missingKeyError } from "../lib/errors.ts";
 import { menuItems } from "../lib/menu.ts";
 import { PORT_NAME, type PortOutbound, type StartMessage, type ToPageMessage, type ToWorkerMessage } from "../lib/messages.ts";
-import { googleCode } from "../lib/languages.ts";
 import { testConnection } from "../lib/qwen.ts";
 import { isModel, readSettings } from "../lib/settings.ts";
 import { runTranslationJob } from "../lib/translate-job.ts";
@@ -135,34 +134,25 @@ async function handleMessage(message: ToWorkerMessage, sender: chrome.runtime.Me
 
 async function openGoogleTranslate(sender: chrome.runtime.MessageSender) {
   const tab = sender.tab?.id != null ? sender.tab : await activeTab();
-  if (tab?.id == null || !canBrowserTranslate(tab.url)) {
-    return {
-      ok: false,
-      message: "当前页面不能唤起浏览器翻译，只支持普通 http(s) 网页。没有改动页面。",
-    };
-  }
-  const settings = await readSettings();
   const tabsApi = chrome.tabs as typeof chrome.tabs & {
     translate?: (tabId: number, options: { targetLanguage: string }) => Promise<void>;
   };
-  if (typeof tabsApi.translate === "function") {
-    try {
-      await tabsApi.translate(tab.id, { targetLanguage: googleCode(settings.targetLang) });
-      return { ok: true, via: "chrome.tabs.translate" };
-    } catch {
-      // 稳定版没有这个接口，继续走下面的网页翻译。
-    }
+  const translate = tabsApi.translate;
+  const settings = await readSettings();
+  const decision = decideGooglePage({
+    pageUrl: tab?.url,
+    targetLang: settings.targetLang,
+    inPageApi: typeof translate === "function",
+  });
+  if (!decision.ok) return { ok: false, message: decision.message };
+  if (tab?.id == null || typeof translate !== "function") {
+    return { ok: false, message: "找不到当前标签页。没有跳转，也没有改动页面。" };
   }
   try {
-    await chrome.tabs.update(tab.id, {
-      url: googleTranslateUrl(tab.url ?? "", settings.sourceLang, settings.targetLang),
-    });
-    return { ok: true, via: "google-translate-url" };
+    await translate(tab.id, { targetLanguage: decision.targetLanguage });
+    return { ok: true, via: "chrome.tabs.translate" };
   } catch {
-    return {
-      ok: false,
-      message: "Chrome 没有公开的整页翻译接口，打开谷歌翻译页也失败了。没有做 LLM 翻译。",
-    };
+    return { ok: false, message: GOOGLE_IN_PAGE_FAILED };
   }
 }
 

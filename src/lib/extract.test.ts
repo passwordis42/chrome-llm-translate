@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { parseHTML } from "linkedom";
 import { extractBlocks } from "./extract.ts";
-import { googleTranslateUrl, canBrowserTranslate } from "./google.ts";
+import { readFileSync } from "node:fs";
+import { canBrowserTranslate, decideGooglePage, GOOGLE_IN_PAGE_FAILED } from "./google.ts";
 import { computeFloatPosition } from "./layout.ts";
 import { menuItems } from "./menu.ts";
 import { classifySelection, shouldOfferSelection } from "./selection.ts";
@@ -71,17 +72,57 @@ describe("menu", () => {
   });
 });
 
-describe("google translate fallback", () => {
-  it("builds a translate URL and refuses non-http pages", () => {
-    const url = googleTranslateUrl("https://example.com/a b", "auto", "zh");
-    const parsed = new URL(url);
-    assert.equal(parsed.hostname, "translate.google.com");
-    assert.equal(parsed.searchParams.get("sl"), "auto");
-    assert.equal(parsed.searchParams.get("tl"), "zh-CN");
-    assert.equal(parsed.searchParams.get("u"), "https://example.com/a b");
+describe("google translate stays on the page", () => {
+  it("uses the in-page API when the browser has one, and never builds a navigation URL", () => {
+    const ready = decideGooglePage({
+      pageUrl: "https://example.com/a b",
+      targetLang: "zh",
+      inPageApi: true,
+    });
+    assert.deepEqual(ready, { ok: true, targetLanguage: "zh-CN" });
+    assert.equal("url" in ready, false);
+    assert.equal(JSON.stringify(ready).includes("https://"), false);
+
+    const english = decideGooglePage({
+      pageUrl: "https://example.com/post",
+      targetLang: "en",
+      inPageApi: true,
+    });
+    assert.deepEqual(english, { ok: true, targetLanguage: "en" });
+
+    const missing = decideGooglePage({
+      pageUrl: "https://example.com/post",
+      targetLang: "zh",
+      inPageApi: false,
+    });
+    assert.equal(missing.ok, false);
+    if (!missing.ok) {
+      assert.match(missing.message, /没有跳转到 translate\.google\.com/);
+      assert.equal(missing.message.includes("https://"), false);
+    }
+
+    const special = decideGooglePage({
+      pageUrl: "chrome://extensions",
+      targetLang: "zh",
+      inPageApi: true,
+    });
+    assert.equal(special.ok, false);
+    if (!special.ok) assert.match(special.message, /没有跳转/);
+
     assert.equal(canBrowserTranslate("https://example.com/post"), true);
     assert.equal(canBrowserTranslate("chrome://extensions"), false);
     assert.equal(canBrowserTranslate("https://translate.google.com/translate"), false);
+    assert.equal(canBrowserTranslate(undefined), false);
+    assert.match(GOOGLE_IN_PAGE_FAILED, /没有跳转到 translate\.google\.com/);
+    assert.equal(GOOGLE_IN_PAGE_FAILED.includes("https://translate.google.com"), false);
+
+    const googleSource = readFileSync(new URL("./google.ts", import.meta.url), "utf8");
+    const background = readFileSync(new URL("../background/index.ts", import.meta.url), "utf8");
+    assert.equal(googleSource.includes("googleTranslateUrl"), false);
+    assert.equal(googleSource.includes("translate.google.com/translate"), false);
+    assert.equal(background.includes("chrome.tabs.update"), false);
+    assert.equal(background.includes("googleTranslateUrl"), false);
+    assert.equal(background.includes("translate.google.com/translate"), false);
   });
 });
 

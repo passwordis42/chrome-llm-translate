@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "一翻",
-  "version": "0.1.0",
-  "description": "用通义千问做划词与整页双语翻译。进页不自动翻；整页需确认。",
+  "version": "0.1.1",
+  "description": "用通义千问做划词与整页翻译。整页译文插在原页段落下；谷歌只唤起原页翻译。进页不自动翻。",
   "minimum_chrome_version": "116",
   "icons": {
     "16": "icons/icon16.png",

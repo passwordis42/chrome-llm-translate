@@ -57,7 +57,7 @@ try {
   const early = await page.evaluate(() => ({
     float: Boolean(document.getElementById("yifan-float")),
     dialog: Boolean(document.getElementById("yifan-dialog")),
-    bilingual: Boolean(document.getElementById("yifan-page")),
+    bilingual: Boolean(document.getElementById("yifan-page")) || Boolean(document.querySelector("[data-yifan-inline]")),
     sample: document.querySelector("#sample")?.textContent ?? "",
   }));
   if (early.float || early.dialog || early.bilingual) fail(`进页就改了 DOM: ${JSON.stringify(early)}`);
@@ -111,43 +111,78 @@ try {
   const aiCancel = sw.evaluate((id) => chrome.tabs.sendMessage(id, { type: "show-page-ai" }), tabId);
   await page.locator("#yifan-dialog").waitFor({ timeout: 5000 });
   const aiCopy = await shadowText(page, "yifan-dialog");
-  if (!aiCopy.includes("用千问翻译整页为") || !aiCopy.includes("并排双语")) fail(`整页 AI 确认文案不对: ${aiCopy}`);
+  if (!aiCopy.includes("段落下方") || !aiCopy.includes("没有全屏盖层")) fail(`整页 AI 确认文案不对: ${aiCopy}`);
   await page.locator("#yifan-dialog").screenshot({ path: path.join(shots, "confirm-ai.png") });
   await page.locator("#yifan-dialog").getByRole("button", { name: "取消" }).click();
   await aiCancel;
   await page.waitForTimeout(200);
-  if (await page.locator("#yifan-page").count()) fail("取消整页 AI 之后仍然改了页面");
+  if (await page.locator("#yifan-page").count()) fail("取消整页 AI 之后仍然出现盖层");
+  if (await page.locator("[data-yifan-inline]").count()) fail("取消整页 AI 之后仍然插入了译文");
   if (page.url() !== pageUrl) fail(`取消后 URL 变了: ${page.url()}`);
 
   const aiRun = sw.evaluate((id) => chrome.tabs.sendMessage(id, { type: "show-page-ai" }), tabId);
   await page.locator("#yifan-dialog").getByRole("button", { name: "确认翻译" }).click();
-  await page.locator("#yifan-page").waitFor({ timeout: 5000 });
-  const bilingual = await shadowText(page, "yifan-page");
-  if (!bilingual.includes("整页 AI 对照阅读")) fail("并排页缺少标题");
-  if (!bilingual.includes("When a sentence matters")) fail("并排页没有保留原文");
-  if (!bilingual.includes("不会假翻")) fail("没 Key 时并排页应明确失败");
-  if (bilingual.includes("插件会把原文")) fail("并排页出现了假译文");
+  const slot = page.locator("#sample + [data-yifan-inline]");
+  await slot.waitFor({ timeout: 5000 });
+  await page.waitForFunction(() => document.querySelector("#sample + [data-yifan-inline]")?.textContent?.includes("不会假翻"));
+  const slotText = await slot.textContent();
+  if (!slotText?.includes("不会假翻")) fail("没 Key 时译文应写在段落下并明确失败");
+  if (slotText?.includes("插件会把原文")) fail("段下出现了假译文");
+  const sampleText = await page.locator("#sample").textContent();
+  if (!sampleText?.includes("When a sentence matters")) fail("原文段落被替换了");
+  if (sampleText?.includes("不会假翻")) fail("失败提示写进了原文");
   const originalStillThere = await page.locator("article h1").textContent();
   if (!originalStillThere?.includes("Large language models")) fail("原文标题被替换了");
-  await page.screenshot({ path: path.join(shots, "sidebyside.png") });
-  await page.locator("#yifan-page").getByRole("button", { name: "退出对照" }).click();
-  await page.locator("#yifan-page").waitFor({ state: "detached", timeout: 3000 });
+  if (await page.locator("#yifan-page").count()) fail("整页 AI 不该打开全屏盖层");
+  const locked = await page.evaluate(() => document.documentElement.style.overflow);
+  if (locked === "hidden") fail("整页 AI 锁了页面滚动");
+  await page.locator("#stay-link").click();
+  if (!page.url().includes("#still-here")) fail("插入译文后原页链接点不了");
+  await page.screenshot({ path: path.join(shots, "inline.png") });
+  await page.locator("#yifan-inline-bar").getByRole("button", { name: "清除译文" }).click();
+  await page.locator("[data-yifan-inline]").waitFor({ state: "detached", timeout: 3000 });
+  if (await page.locator("#yifan-inline-bar").count()) fail("清除后工具条还在");
   await aiRun;
   if (!(await page.locator("article h1").textContent())?.includes("Large language models")) {
-    fail("退出对照后原文没了");
+    fail("清除译文后原文没了");
   }
+  await page.locator("#stay-link").click();
+  if (!page.url().includes("#still-here")) fail("清除后原页链接点不了");
 
   const googleCancel = sw.evaluate((id) => chrome.tabs.sendMessage(id, { type: "show-page-google" }), tabId);
   await page.locator("#yifan-dialog").waitFor();
   const googleCopy = await shadowText(page, "yifan-dialog");
-  if (!googleCopy.includes("用浏览器自带") || !googleCopy.includes("打开谷歌翻译")) {
+  if (!googleCopy.includes("用浏览器自带") || !googleCopy.includes("唤起页面翻译") || !googleCopy.includes("不跳转")) {
     fail(`谷歌确认文案不对: ${googleCopy}`);
   }
   await page.locator("#yifan-dialog").screenshot({ path: path.join(shots, "confirm-google.png") });
   await page.locator("#yifan-dialog").getByRole("button", { name: "取消" }).click();
   await googleCancel;
-  if (page.url() !== pageUrl) fail("取消谷歌后页面被导航走了");
-  if (await page.locator("#yifan-page").count()) fail("谷歌确认不该打开 LLM 并排");
+  if (page.url().includes("translate.google.com")) fail("取消谷歌后跳到了 translate.google.com");
+  if (!page.url().startsWith(pageUrl.replace(/#.*$/, ""))) fail("取消谷歌后页面被导航走了");
+  if (await page.locator("#yifan-page").count() || await page.locator("[data-yifan-inline]").count()) {
+    fail("谷歌确认不该插入 LLM 译文");
+  }
+
+  const beforeGoogle = page.url();
+  const googleRun = sw.evaluate((id) => chrome.tabs.sendMessage(id, { type: "show-page-google" }), tabId);
+  await page.locator("#yifan-dialog").waitFor();
+  await page.locator("#yifan-dialog").getByRole("button", { name: "唤起页面翻译" }).click();
+  const closeNotice = page.locator("#yifan-dialog").getByRole("button", { name: "关闭" });
+  await Promise.race([
+    closeNotice.waitFor({ timeout: 8000 }),
+    googleRun,
+  ]);
+  if (page.url().includes("translate.google.com")) fail("整页谷歌跳到了 translate.google.com");
+  if (new URL(page.url()).origin !== new URL(beforeGoogle).origin) fail(`整页谷歌把页面导航走了: ${page.url()}`);
+  if (await closeNotice.count()) {
+    const notice = await shadowText(page, "yifan-dialog");
+    if (!notice.includes("没有跳转") && !notice.includes("没有调起来")) {
+      fail(`谷歌失败提示不清楚: ${notice}`);
+    }
+    await closeNotice.click();
+  }
+  await googleRun;
 
   const popup = await context.newPage();
   await popup.goto(`chrome-extension://${extensionId}/popup.html`);
