@@ -5,6 +5,7 @@ import { clearInlinePage, initPage, isInlinePageOpen, openInlinePage } from "./p
 import { closeSelectConfirm, currentSelectConfirmText, isSelectConfirmOpen, openSelectConfirm, repositionSelectConfirm } from "./select-confirm.ts";
 import type { ToPageMessage } from "../lib/messages.ts";
 import { cleanSelection, selectionOffer } from "../lib/selection.ts";
+import { createForceSelect } from "../lib/force-select.ts";
 import { STORAGE_KEY, defaultSettings, normalizeSettings, readSettings, writeSettings } from "../lib/settings.ts";
 import { isTargetLang } from "../lib/languages.ts";
 
@@ -17,6 +18,15 @@ if (!scope.__YIFAN_BOOTED__) {
 function boot(): void {
   let settings = defaultSettings();
   let ready = false;
+  const forceSelect = createForceSelect(document, {
+    onForcedMouseDown() {
+      closeSelectionFloat();
+      closeSelectConfirm();
+    },
+    onForcedMouseUp() {
+      offerSelection();
+    },
+  });
 
   initFloat({
     getSettings: () => settings,
@@ -41,12 +51,14 @@ function boot(): void {
     })
     .finally(() => {
       ready = true;
+      forceSelect.setEnabled(settings.forceSelectEnabled);
     });
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local" || !changes[STORAGE_KEY]) return;
     settings = normalizeSettings(changes[STORAGE_KEY].newValue);
     ready = true;
+    forceSelect.setEnabled(settings.forceSelectEnabled);
   });
 
   chrome.runtime.onMessage.addListener((message: ToPageMessage, _sender, sendResponse) => {

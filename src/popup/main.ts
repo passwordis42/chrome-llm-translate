@@ -18,6 +18,7 @@ const customModel = document.querySelector<HTMLInputElement>("#custom-model");
 const sourceSelect = document.querySelector<HTMLSelectElement>("#source-lang");
 const targetSelect = document.querySelector<HTMLSelectElement>("#target-lang");
 const toggle = document.querySelector<HTMLButtonElement>("#selection-toggle");
+const forceSelectToggle = document.querySelector<HTMLButtonElement>("#force-select-toggle");
 const modeConfirm = document.querySelector<HTMLButtonElement>("#mode-confirm");
 const modeImmediate = document.querySelector<HTMLButtonElement>("#mode-immediate");
 const err = document.querySelector<HTMLElement>("#err");
@@ -35,7 +36,7 @@ const glossaryError = document.querySelector<HTMLElement>("#glossary-error");
 
 if (
   !settingsView || !glossaryView || !keyInput || !modelSelect || !customModel || !sourceSelect || !targetSelect ||
-  !toggle || !modeConfirm || !modeImmediate || !err || !errTitle || !errBody || !ok || !okTitle || !okBody ||
+  !toggle || !forceSelectToggle || !modeConfirm || !modeImmediate || !err || !errTitle || !errBody || !ok || !okTitle || !okBody ||
   !testButton || !saveButton || !rows || !termSource || !termTarget || !glossaryError
 ) {
   throw new Error("设置页结构不完整");
@@ -43,7 +44,7 @@ if (
 
 const ui = {
   settingsView, glossaryView, keyInput, modelSelect, customModel, sourceSelect, targetSelect, toggle,
-  modeConfirm, modeImmediate, err, errTitle, errBody, ok, okTitle, okBody, testButton, saveButton,
+  forceSelectToggle, modeConfirm, modeImmediate, err, errTitle, errBody, ok, okTitle, okBody, testButton, saveButton,
   rows, termSource, termTarget, glossaryError,
 };
 
@@ -77,6 +78,14 @@ ui.toggle.addEventListener("click", () => {
   void enqueue(async () => {
     const current = await readSettings();
     await writeSettings({ ...current, selectionEnabled: next });
+  });
+});
+ui.forceSelectToggle.addEventListener("click", () => {
+  const next = ui.forceSelectToggle.getAttribute("aria-checked") !== "true";
+  applyForceSelectSwitch(next);
+  void enqueue(async () => {
+    const current = await readSettings();
+    await writeSettings({ ...current, forceSelectEnabled: next });
   });
 });
 ui.modeConfirm.addEventListener("click", () => persistMode("confirm"));
@@ -139,8 +148,14 @@ function applySettings(settings: Settings): void {
   ui.sourceSelect.value = settings.sourceLang;
   ui.targetSelect.value = settings.targetLang;
   ui.toggle.setAttribute("aria-checked", settings.selectionEnabled ? "true" : "false");
+  applyForceSelectSwitch(settings.forceSelectEnabled);
   applyMode(settings.selectionMode);
   renderGlossary(settings.glossary);
+}
+
+function applyForceSelectSwitch(on: boolean): void {
+  ui.forceSelectToggle.setAttribute("aria-checked", on ? "true" : "false");
+  ui.forceSelectToggle.setAttribute("aria-label", on ? "允许划选被禁文字，已开启" : "允许划选被禁文字，已关闭");
 }
 
 function applyMode(mode: SelectionMode): void {
@@ -206,6 +221,7 @@ async function saveForm(): Promise<void> {
         targetLang,
         selectionEnabled: ui.toggle.getAttribute("aria-checked") === "true",
         selectionMode: currentMode(),
+        forceSelectEnabled: ui.forceSelectToggle.getAttribute("aria-checked") === "true",
         glossary: current.glossary,
       });
     });

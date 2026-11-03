@@ -1,6 +1,6 @@
 # 在 Edge 里加载一翻
 
-一翻 **v0.1.3** 是 Chromium Manifest V3 扩展。Chrome 和 Edge 用同一份 `dist/`，界面相同。没有单独的 Edge 清单，也不加 Firefox 才需要的 `browser_specific_settings`。
+一翻 **v0.1.4** 是 Chromium Manifest V3 扩展。Chrome 和 Edge 用同一份 `dist/`，界面相同。没有单独的 Edge 清单，也不加 Firefox 才需要的 `browser_specific_settings`。
 
 默认模型是 `qwen3.7-plus`。划词默认先出确认条，点「翻译」才请求模型。
 
@@ -22,7 +22,7 @@ npm run build
 npm run pack
 ```
 
-产物：`release/yifan-0.1.3-mv3.zip`。解压后应直接看到 `manifest.json`。
+产物：`release/yifan-0.1.4-mv3.zip`。解压后应直接看到 `manifest.json`。
 
 ## Edge
 
@@ -40,4 +40,4 @@ npm run pack
 
 - 划词：先出确认条，未点「翻译」不请求；点后是原来的流式浮层。
 - 整页 AI：确认后，可见区原文直接换成译文；往下滚，新字露出会自动续翻（每批最多 200 段）。清除译文会还原原文。没有段下插译文，也没有全屏盖层。
-- 设置：可填 Key、在三档精选里选模型，或手填 model id。Edge 与 Chrome 是同一张设置页。
+- 设置：可填 Key、在三档精选里选模型，或手填 model id。「允许划选被禁文字」默认关。Edge 与 Chrome 是同一张设置页。
