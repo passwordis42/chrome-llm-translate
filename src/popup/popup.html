@@ -13,7 +13,7 @@
       <img class="logo" src="icons/icon128.png" width="28" height="28" alt="" />
       <div>
         <h1>一翻</h1>
-        <div class="sub">通义千问 · Chrome 扩展设置</div>
+        <div class="sub">通义千问 · Chrome / Edge 设置</div>
       </div>
     </div>
     <div class="body">
@@ -22,12 +22,27 @@
         <input id="api-key" type="password" autocomplete="off" spellcheck="false" placeholder="sk-" aria-label="API Key" />
       </div>
       <div class="field">
-        <div class="label"><span>模型</span></div>
+        <div class="label"><span>模型</span><span class="hint">默认均衡 · qwen3.7-plus</span></div>
         <select id="model" aria-label="模型">
-          <option value="qwen-plus">qwen-plus</option>
-          <option value="qwen-turbo">qwen-turbo</option>
-          <option value="qwen-max">qwen-max</option>
+          <optgroup label="快速便宜">
+            <option value="qwen3.5-flash">qwen3.5-flash</option>
+            <option value="qwen3.7-flash">qwen3.7-flash</option>
+            <option value="qwen3.8-flash">qwen3.8-flash</option>
+          </optgroup>
+          <optgroup label="均衡">
+            <option value="qwen3.5-plus">qwen3.5-plus</option>
+            <option value="qwen3.6-plus">qwen3.6-plus</option>
+            <option value="qwen3.7-plus" selected>qwen3.7-plus</option>
+          </optgroup>
+          <optgroup label="能力高">
+            <option value="qwen3.7-max">qwen3.7-max</option>
+            <option value="qwen3.8-max">qwen3.8-max</option>
+          </optgroup>
         </select>
+      </div>
+      <div class="field">
+        <div class="label"><span>自定义 model id</span><span class="hint">可选手填</span></div>
+        <input id="custom-model" type="text" autocomplete="off" spellcheck="false" placeholder="例如 qwen-plus（留空则用上方精选）" aria-label="自定义 model id" />
       </div>
       <div class="row2">
         <div class="field">
@@ -42,9 +57,17 @@
       <div class="toggle-row">
         <div>
           <div class="t-title">划词翻译</div>
-          <div class="t-desc">选中文本弹出双语浮层（默认开）</div>
+          <div class="t-desc">选中文本弹出确认或浮层（默认开）</div>
         </div>
         <button class="switch" id="selection-toggle" type="button" role="switch" aria-checked="true" aria-label="划词翻译"></button>
+      </div>
+      <div class="mode-box">
+        <div class="t-title">划词模式</div>
+        <div class="t-desc">默认先确认再翻，避免误触耗额度</div>
+        <div class="seg" role="group" aria-label="划词模式">
+          <button type="button" id="mode-confirm" aria-pressed="true">先确认再翻</button>
+          <button type="button" id="mode-immediate" aria-pressed="false">划完即翻</button>
+        </div>
       </div>
       <button class="link-btn" id="open-glossary" type="button">
         术语本

@@ -145,6 +145,86 @@ describe("runTranslationJob", () => {
     );
   });
 
+  it("sends the saved model id for both selection and page jobs", async () => {
+    const settings = defaultSettings();
+    settings.apiKey = "sk-test-key";
+    settings.model = "qwen-plus";
+    let sent = "";
+    const fetchImpl: typeof fetch = async (_input, init) => {
+      sent = (JSON.parse(String(init?.body)) as { model: string }).model;
+      return new Response(sseOf("ok"), { status: 200 });
+    };
+    await runTranslationJob({
+      text: "hello",
+      settings,
+      signal: new AbortController().signal,
+      onText: () => undefined,
+      fetchImpl,
+    });
+    assert.equal(sent, "qwen-plus");
+  });
+
+  it("reports an invalid model without inventing a translation", async () => {
+    const settings = defaultSettings();
+    settings.apiKey = "sk-test-key";
+    settings.model = "qwen3.7-plus";
+    let sent = "";
+    const fetchImpl: typeof fetch = async (_input, init) => {
+      sent = (JSON.parse(String(init?.body)) as { model: string }).model;
+      return new Response(
+        JSON.stringify({ error: { message: "Model not exist or you do not have permission." } }),
+        { status: 400 },
+      );
+    };
+    await assert.rejects(
+      () =>
+        runTranslationJob({
+          text: "SECRET_SOURCE_SENTENCE",
+          settings,
+          signal: new AbortController().signal,
+          onText: () => {
+            throw new Error("should not emit text");
+          },
+          fetchImpl,
+        }),
+      (error: unknown) => {
+        assert.ok(error instanceof TranslateError);
+        assert.match(error.message, /不会假翻/);
+        assert.equal(error.message.includes("SECRET_SOURCE_SENTENCE"), false);
+        assert.equal(error.message.includes("插件会把"), false);
+        return true;
+      },
+    );
+    assert.equal(sent, "qwen3.7-plus");
+  });
+
+  it("reports model permission failures without inventing a translation", async () => {
+    const settings = defaultSettings();
+    settings.apiKey = "sk-test-key";
+    settings.model = "qwen3.8-max";
+    const fetchImpl: typeof fetch = async () =>
+      new Response(JSON.stringify({ error: { message: "Access denied for this model." } }), { status: 403 });
+    await assert.rejects(
+      () =>
+        runTranslationJob({
+          text: "SECRET_SOURCE_SENTENCE",
+          settings,
+          signal: new AbortController().signal,
+          onText: () => {
+            throw new Error("should not emit text");
+          },
+          fetchImpl,
+        }),
+      (error: unknown) => {
+        assert.ok(error instanceof TranslateError);
+        assert.match(error.message, /Access denied for this model/);
+        assert.match(error.message, /不会假翻/);
+        assert.equal(error.message.includes("SECRET_SOURCE_SENTENCE"), false);
+        return true;
+      },
+    );
+  });
+
   it("reports network failures as network failures", async () => {
     const settings = defaultSettings();
     settings.apiKey = "sk-test-key";

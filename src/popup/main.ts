@@ -1,14 +1,25 @@
 import { SOURCE_LANGUAGES, TARGET_LANGUAGES, isTargetLang } from "../lib/languages.ts";
 import type { GlossaryEntry } from "../lib/glossary.ts";
-import { isModel, readSettings, writeSettings, type Settings } from "../lib/settings.ts";
+import {
+  DEFAULT_MODEL,
+  isCuratedModel,
+  readSettings,
+  resolveModelChoice,
+  writeSettings,
+  type SelectionMode,
+  type Settings,
+} from "../lib/settings.ts";
 
 const settingsView = document.querySelector<HTMLElement>("#settings-view");
 const glossaryView = document.querySelector<HTMLElement>("#glossary-view");
 const keyInput = document.querySelector<HTMLInputElement>("#api-key");
 const modelSelect = document.querySelector<HTMLSelectElement>("#model");
+const customModel = document.querySelector<HTMLInputElement>("#custom-model");
 const sourceSelect = document.querySelector<HTMLSelectElement>("#source-lang");
 const targetSelect = document.querySelector<HTMLSelectElement>("#target-lang");
 const toggle = document.querySelector<HTMLButtonElement>("#selection-toggle");
+const modeConfirm = document.querySelector<HTMLButtonElement>("#mode-confirm");
+const modeImmediate = document.querySelector<HTMLButtonElement>("#mode-immediate");
 const err = document.querySelector<HTMLElement>("#err");
 const errTitle = document.querySelector<HTMLElement>("#err-title");
 const errBody = document.querySelector<HTMLElement>("#err-body");
@@ -23,16 +34,17 @@ const termTarget = document.querySelector<HTMLInputElement>("#term-target");
 const glossaryError = document.querySelector<HTMLElement>("#glossary-error");
 
 if (
-  !settingsView || !glossaryView || !keyInput || !modelSelect || !sourceSelect || !targetSelect ||
-  !toggle || !err || !errTitle || !errBody || !ok || !okTitle || !okBody || !testButton || !saveButton ||
-  !rows || !termSource || !termTarget || !glossaryError
+  !settingsView || !glossaryView || !keyInput || !modelSelect || !customModel || !sourceSelect || !targetSelect ||
+  !toggle || !modeConfirm || !modeImmediate || !err || !errTitle || !errBody || !ok || !okTitle || !okBody ||
+  !testButton || !saveButton || !rows || !termSource || !termTarget || !glossaryError
 ) {
   throw new Error("设置页结构不完整");
 }
 
 const ui = {
-  settingsView, glossaryView, keyInput, modelSelect, sourceSelect, targetSelect, toggle,
-  err, errTitle, errBody, ok, okTitle, okBody, testButton, saveButton, rows, termSource, termTarget, glossaryError,
+  settingsView, glossaryView, keyInput, modelSelect, customModel, sourceSelect, targetSelect, toggle,
+  modeConfirm, modeImmediate, err, errTitle, errBody, ok, okTitle, okBody, testButton, saveButton,
+  rows, termSource, termTarget, glossaryError,
 };
 
 fillSelect(ui.sourceSelect, SOURCE_LANGUAGES);
@@ -54,7 +66,11 @@ function enqueue(task: () => Promise<void>): Promise<void> {
 void readSettings().then((settings) => applySettings(settings)).catch(() => showError("连接失败", "读不到本地设置。"));
 
 ui.keyInput.addEventListener("input", () => clearBanners());
-ui.modelSelect.addEventListener("change", () => clearBanners());
+ui.modelSelect.addEventListener("change", () => {
+  ui.customModel.value = "";
+  clearBanners();
+});
+ui.customModel.addEventListener("input", () => clearBanners());
 ui.toggle.addEventListener("click", () => {
   const next = ui.toggle.getAttribute("aria-checked") !== "true";
   ui.toggle.setAttribute("aria-checked", next ? "true" : "false");
@@ -63,6 +79,8 @@ ui.toggle.addEventListener("click", () => {
     await writeSettings({ ...current, selectionEnabled: next });
   });
 });
+ui.modeConfirm.addEventListener("click", () => persistMode("confirm"));
+ui.modeImmediate.addEventListener("click", () => persistMode("immediate"));
 
 document.querySelector("#open-glossary")?.addEventListener("click", () => {
   ui.settingsView.hidden = true;
@@ -111,11 +129,40 @@ function fillSelect(select: HTMLSelectElement, options: ReadonlyArray<{ code: st
 
 function applySettings(settings: Settings): void {
   ui.keyInput.value = settings.apiKey;
-  ui.modelSelect.value = settings.model;
+  if (isCuratedModel(settings.model)) {
+    ui.modelSelect.value = settings.model;
+    ui.customModel.value = "";
+  } else {
+    ui.modelSelect.value = DEFAULT_MODEL;
+    ui.customModel.value = settings.model;
+  }
   ui.sourceSelect.value = settings.sourceLang;
   ui.targetSelect.value = settings.targetLang;
   ui.toggle.setAttribute("aria-checked", settings.selectionEnabled ? "true" : "false");
+  applyMode(settings.selectionMode);
   renderGlossary(settings.glossary);
+}
+
+function applyMode(mode: SelectionMode): void {
+  ui.modeConfirm.setAttribute("aria-pressed", mode === "confirm" ? "true" : "false");
+  ui.modeImmediate.setAttribute("aria-pressed", mode === "immediate" ? "true" : "false");
+}
+
+function currentMode(): SelectionMode {
+  return ui.modeImmediate.getAttribute("aria-pressed") === "true" ? "immediate" : "confirm";
+}
+
+function persistMode(mode: SelectionMode): void {
+  applyMode(mode);
+  clearBanners();
+  void enqueue(async () => {
+    const current = await readSettings();
+    await writeSettings({ ...current, selectionMode: mode });
+  });
+}
+
+function chosenModel(): ReturnType<typeof resolveModelChoice> {
+  return resolveModelChoice(ui.modelSelect.value, ui.customModel.value);
 }
 
 function renderGlossary(entries: GlossaryEntry[]): void {
@@ -143,17 +190,22 @@ function renderGlossary(entries: GlossaryEntry[]): void {
 async function saveForm(): Promise<void> {
   ui.saveButton.disabled = true;
   try {
+    const choice = chosenModel();
+    if (!choice.ok) {
+      showError("连接失败", choice.message);
+      return;
+    }
     await enqueue(async () => {
       const current = await readSettings();
-      const model = isModel(ui.modelSelect.value) ? ui.modelSelect.value : current.model;
       const targetLang = isTargetLang(ui.targetSelect.value) ? ui.targetSelect.value : current.targetLang;
       await writeSettings({
         ...current,
         apiKey: ui.keyInput.value.trim(),
-        model,
+        model: choice.model,
         sourceLang: ui.sourceSelect.value,
         targetLang,
         selectionEnabled: ui.toggle.getAttribute("aria-checked") === "true",
+        selectionMode: currentMode(),
         glossary: current.glossary,
       });
     });
@@ -167,6 +219,11 @@ async function saveForm(): Promise<void> {
 
 async function testConnection(): Promise<void> {
   const apiKey = ui.keyInput.value.trim();
+  const choice = chosenModel();
+  if (!choice.ok) {
+    showError("连接失败", choice.message);
+    return;
+  }
   if (!apiKey) {
     showError("连接失败", "请先填写 API Key。不会假翻。");
     return;
@@ -178,7 +235,7 @@ async function testConnection(): Promise<void> {
     const response = (await chrome.runtime.sendMessage({
       type: "test-connection",
       apiKey,
-      model: ui.modelSelect.value,
+      model: choice.model,
     })) as { ok?: boolean; title?: string; message?: string } | undefined;
     if (response?.ok) showOk("连接成功", "千问已响应。若刚改过 Key 或模型，请再点保存。");
     else showError(response?.title || "连接失败", response?.message || "API Key 无效或网络不可达。请检查后重试——不会假翻。");

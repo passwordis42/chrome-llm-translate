@@ -1,6 +1,6 @@
 import cssText from "./content.css";
 
-const HOST_IDS = new Set(["yifan-float", "yifan-dialog", "yifan-inline-bar"]);
+const HOST_IDS = new Set(["yifan-float", "yifan-dialog", "yifan-inline-bar", "yifan-select-confirm"]);
 
 export function mount(id: string): { host: HTMLDivElement; root: ShadowRoot } {
   document.getElementById(id)?.remove();
