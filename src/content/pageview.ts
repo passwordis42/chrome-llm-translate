@@ -1,7 +1,8 @@
-import { extractBlocks, type PageBlock } from "../lib/extract.ts";
+import { extractBlocks, PAGE_BLOCK_LIMIT, type PageBlock } from "../lib/extract.ts";
+import { clearInsertedTranslations, inlineTarget, insertTranslationsBelow } from "../lib/inpage.ts";
 import { pairLabel } from "../lib/languages.ts";
 import type { Settings } from "../lib/settings.ts";
-import { copyText, el, lockPageScroll, markImg, mount, unlockPageScroll } from "./dom.ts";
+import { copyText, el, markImg, mount } from "./dom.ts";
 import { requestTranslation, type StreamError } from "./session.ts";
 
 export interface PageDeps {
@@ -9,115 +10,122 @@ export interface PageDeps {
 }
 
 let deps: PageDeps | null = null;
-let host: HTMLDivElement | null = null;
+let barHost: HTMLDivElement | null = null;
+let metaNode: HTMLElement | null = null;
+let outputs: HTMLElement[] = [];
 let generation = 0;
 let abort: AbortController | null = null;
-let locked = false;
+let truncatedNote = false;
 
 export function initPage(next: PageDeps): void {
   deps = next;
 }
 
-export function isSideBySideOpen(): boolean {
-  return host != null;
+export function isInlinePageOpen(): boolean {
+  return barHost != null || document.querySelector("[data-yifan-inline]") != null;
 }
 
-export function closeSideBySide(): void {
+export function clearInlinePage(): void {
   generation += 1;
   abort?.abort();
   abort = null;
-  host?.remove();
-  host = null;
-  if (locked) {
-    unlockPageScroll();
-    locked = false;
-  }
+  outputs = [];
+  truncatedNote = false;
+  clearInsertedTranslations(document);
+  barHost?.remove();
+  barHost = null;
+  metaNode = null;
 }
 
-export async function openSideBySide(): Promise<void> {
-  closeSideBySide();
+export async function openInlinePage(): Promise<"empty" | "done"> {
+  clearInlinePage();
   const token = generation;
+  if (!deps) return "done";
   const extracted = extractBlocks(document);
-  if (token !== generation) return;
-  const { root } = render(extracted);
-  if (extracted.blocks.length === 0) return;
-  await translateAll(extracted.blocks, root, token);
+  if (token !== generation) return "done";
+  if (extracted.blocks.length === 0) return "empty";
+
+  truncatedNote = extracted.truncated;
+  const slots = insertTranslationsBelow(extracted.blocks);
+  outputs = slots
+    .map((slot) => inlineTarget(slot))
+    .filter((node): node is HTMLElement => node != null);
+  const byId = new Map(outputs.map((node) => [node.getAttribute("data-yifan-dst") ?? "", node]));
+  const blocks = extracted.blocks.filter((block) => byId.has(block.id));
+  if (token !== generation) {
+    clearInlinePage();
+    return "done";
+  }
+  if (blocks.length === 0) {
+    clearInlinePage();
+    return "empty";
+  }
+  renderBar(blocks.length);
+  await translateAll(blocks, byId, token);
+  return "done";
 }
 
-function render(extracted: ReturnType<typeof extractBlocks>): { root: ShadowRoot } {
-  const mounted = mount("yifan-page");
-  host = mounted.host;
-  lockPageScroll();
-  locked = true;
+function renderBar(total: number): void {
   const settings = deps?.getSettings();
-  const stage = el("div", "stage");
-  const wrap = el("div", "wrap");
-  const toolbar = el("div", "toolbar");
+  const mounted = mount("yifan-inline-bar");
+  barHost = mounted.host;
+  mounted.host.setAttribute("role", "region");
+  mounted.host.setAttribute("aria-label", "一翻整页译文");
+
+  const toolbar = el("div", "toolbar inline-bar");
   const left = el("div", "left");
   const titles = el("div");
-  titles.append(el("h2", undefined, "一翻 · 整页 AI"), el("div", "meta", "文内并排双语 · 不替换原文"));
+  metaNode = el("div", "meta", barStatus("run", 0, total));
+  titles.append(el("h2", undefined, "一翻 · 整页 AI"), metaNode);
   left.append(markImg(28), titles);
 
   const right = el("div", "right");
   const chip = el("span", "chip", settings ? pairLabel(settings.sourceLang, settings.targetLang) : "自动 → 中文");
   const copyAll = el("button", "btn primary", "复制全部译文");
   copyAll.type = "button";
-  copyAll.addEventListener("click", () => void onCopyAll(mounted.root, copyAll));
-  const exit = el("button", "btn", "退出对照");
-  exit.type = "button";
-  exit.addEventListener("click", () => closeSideBySide());
-  right.append(chip, copyAll, exit);
+  copyAll.addEventListener("click", () => void onCopyAll(copyAll));
+  const clear = el("button", "btn", "清除译文");
+  clear.type = "button";
+  clear.addEventListener("click", () => clearInlinePage());
+  right.append(chip, copyAll, clear);
   toolbar.append(left, right);
-
-  const page = el("div", "page");
-  page.append(el("div", "badge", "整页 AI 对照阅读"));
-  page.append(el("h1", undefined, extracted.title));
-  const list = el("div");
-  list.id = "yifan-blocks";
-  if (extracted.blocks.length === 0) {
-    const empty = el("div", "block");
-    empty.append(el("div", "dst bad", "这一页没有找到可翻译的段落。没有改动原文。"));
-    list.append(empty);
-  }
-  for (const block of extracted.blocks) {
-    list.append(blockView(block));
-  }
-  const note = el("p", "note", "说明：进入网页不自动全翻；整页 AI 与整页谷歌都要二次确认。");
-  page.append(list, note);
-  if (extracted.truncated) {
-    page.append(el("p", "note", "这一页较长，只翻译了前 60 段。"));
-  }
-  wrap.append(toolbar, page);
-  stage.append(wrap);
-  mounted.root.append(stage);
-  return { root: mounted.root };
+  mounted.root.append(toolbar);
 }
 
-function blockView(block: PageBlock): HTMLElement {
-  const row = el("div", "block");
-  row.dataset.id = block.id;
-  const sourceCol = el("div");
-  sourceCol.append(el("div", "tag", "原文"), el("div", "src", block.text));
-  const targetCol = el("div");
-  const dst = el("div", "dst");
-  dst.dataset.id = block.id;
-  targetCol.append(el("div", "tag", "译文"), dst);
-  row.append(sourceCol, targetCol);
-  return row;
+function barStatus(phase: "run" | "done" | "stop", index = 0, total = 0): string {
+  const prefix = truncatedNote ? `只翻译前 ${PAGE_BLOCK_LIMIT} 段 · ` : "";
+  if (phase === "run") return `${prefix}正在翻译 ${index + 1}/${total} · 译文在段落下`;
+  if (phase === "stop") return `${prefix}翻译已停止 · 原文仍在原处`;
+  return `${prefix}译文在段落下 · 原文保留`;
 }
 
-async function translateAll(blocks: PageBlock[], root: ShadowRoot, token: number): Promise<void> {
+function setMeta(text: string, token: number): void {
+  if (token !== generation || !metaNode?.isConnected) return;
+  metaNode.textContent = text;
+}
+
+function setReady(dst: HTMLElement, text: string): void {
+  dst.dataset.state = "ready";
+  dst.style.color = "#1f2937";
+  dst.textContent = text;
+}
+
+function setError(dst: HTMLElement, text: string): void {
+  dst.dataset.state = "error";
+  dst.style.color = "#b42318";
+  dst.textContent = text;
+}
+
+async function translateAll(blocks: PageBlock[], byId: Map<string, HTMLElement>, token: number): Promise<void> {
   if (!deps) return;
   const controller = new AbortController();
   abort = controller;
-  const meta = root.querySelector(".meta");
   for (let index = 0; index < blocks.length; index += 1) {
     if (token !== generation || controller.signal.aborted) return;
-    if (meta) meta.textContent = `正在翻译 ${index + 1}/${blocks.length} · 不替换原文`;
+    setMeta(barStatus("run", index, blocks.length), token);
     const block = blocks[index];
-    const dst = root.querySelector<HTMLElement>(`.dst[data-id="${block.id}"]`);
+    const dst = byId.get(block.id);
     if (!dst) continue;
-    dst.classList.add("live");
     const settings = deps.getSettings();
     try {
       await requestTranslation(
@@ -126,36 +134,32 @@ async function translateAll(blocks: PageBlock[], root: ShadowRoot, token: number
         {
           signal: controller.signal,
           onText: (text) => {
-            if (token !== generation) return;
-            dst.textContent = text;
+            if (token !== generation || !text) return;
+            setReady(dst, text);
           },
         },
       );
-      dst.classList.remove("live");
     } catch (error) {
-      dst.classList.remove("live");
       if (token !== generation || (error as Error).name === "AbortError") return;
       const streamError = error as StreamError;
-      dst.classList.add("bad");
-      dst.textContent = streamError.message || "翻译失败。不会假翻。";
+      setError(dst, streamError.message || "翻译失败。不会假翻。");
       if (streamError.fatal !== false) {
         for (let rest = index + 1; rest < blocks.length; rest += 1) {
-          const pending = root.querySelector<HTMLElement>(`.dst[data-id="${blocks[rest].id}"]`);
-          if (!pending) continue;
-          pending.classList.add("bad");
-          pending.textContent = "已停止。请先到设置检查 Key 或网络——不会假翻。";
+          const pending = byId.get(blocks[rest].id);
+          if (!pending || pending.dataset.state === "ready") continue;
+          setError(pending, "已停止。请先到设置检查 Key 或网络——不会假翻。");
         }
-        if (meta) meta.textContent = "文内并排双语 · 翻译已停止";
+        setMeta(barStatus("stop"), token);
         return;
       }
     }
   }
-  if (token === generation && meta) meta.textContent = "文内并排双语 · 不替换原文";
+  setMeta(barStatus("done"), token);
 }
 
-async function onCopyAll(root: ShadowRoot, button: HTMLButtonElement): Promise<void> {
-  const parts = [...root.querySelectorAll<HTMLElement>(".dst")]
-    .filter((node) => !node.classList.contains("bad") && node.textContent?.trim())
+async function onCopyAll(button: HTMLButtonElement): Promise<void> {
+  const parts = outputs
+    .filter((node) => node.dataset.state === "ready" && node.textContent?.trim())
     .map((node) => node.textContent?.trim() ?? "");
   const previous = button.textContent;
   if (parts.length === 0) {

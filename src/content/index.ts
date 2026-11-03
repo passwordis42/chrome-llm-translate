@@ -1,7 +1,7 @@
 import { dismissConfirm, isConfirmOpen, showConfirm, showNotice } from "./confirm.ts";
 import { isYifanEvent } from "./dom.ts";
 import { closeSelectionFloat, currentFloatText, initFloat, isFloatOpen, openSelectionFloat, repositionFloat } from "./float.ts";
-import { closeSideBySide, initPage, isSideBySideOpen, openSideBySide } from "./pageview.ts";
+import { clearInlinePage, initPage, isInlinePageOpen, openInlinePage } from "./pageview.ts";
 import type { ToPageMessage } from "../lib/messages.ts";
 import { cleanSelection, shouldOfferSelection } from "../lib/selection.ts";
 import { STORAGE_KEY, defaultSettings, normalizeSettings, readSettings, writeSettings } from "../lib/settings.ts";
@@ -70,11 +70,13 @@ function boot(): void {
   document.addEventListener("keyup", (event) => {
     if (event.key === "Escape") {
       if (isConfirmOpen()) return;
-      if (isSideBySideOpen()) {
-        closeSideBySide();
+      if (isFloatOpen()) {
+        closeSelectionFloat();
         return;
       }
-      closeSelectionFloat();
+      if (isInlinePageOpen()) {
+        clearInlinePage();
+      }
       return;
     }
     if (!event.shiftKey && !event.key.startsWith("Arrow")) return;
@@ -90,7 +92,7 @@ function boot(): void {
 
   function offerSelection(): void {
     if (!ready || !settings.selectionEnabled) return;
-    if (isSideBySideOpen() || isConfirmOpen()) return;
+    if (isConfirmOpen()) return;
     const active = document.activeElement;
     if (active && /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName)) return;
     const text = cleanSelection(window.getSelection()?.toString() ?? "");
@@ -105,7 +107,6 @@ function boot(): void {
       const live = cleanSelection(window.getSelection()?.toString() ?? "");
       const text = live || cleanSelection(message.text ?? "");
       if (!text) return;
-      closeSideBySide();
       dismissConfirm();
       openSelectionFloat(text);
       return;
@@ -114,7 +115,10 @@ function boot(): void {
       closeSelectionFloat();
       const confirmed = await showConfirm("ai");
       if (!confirmed) return;
-      await openSideBySide();
+      const opened = await openInlinePage();
+      if (opened === "empty") {
+        await showNotice("一翻 · 整页 AI", "这一页没有找到可翻译的段落。没有改动原文。");
+      }
       return;
     }
     if (message.type === "show-page-google") {

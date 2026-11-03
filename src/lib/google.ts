@@ -1,18 +1,9 @@
 import { googleCode } from "./languages.ts";
 
 /**
- * Chrome 扩展没有公开 API 可以唤起地址栏里的「翻译此页」。
- * 确认之后的退路：把当前 http(s) 页导航到谷歌翻译的网页翻译地址。
- * 这用的是浏览器翻译同一套谷歌引擎，不做 LLM 双语卡；浏览器后退可以回来。
+ * 整页谷歌只留在原页，尝试浏览器自带翻译。
+ * 没有公开接口或调用失败时明确失败，不导航到 translate.google.com。
  */
-export function googleTranslateUrl(pageUrl: string, sourceLang: string, targetLang: string): string {
-  const url = new URL("https://translate.google.com/translate");
-  url.searchParams.set("sl", googleCode(sourceLang));
-  url.searchParams.set("tl", googleCode(targetLang));
-  url.searchParams.set("u", pageUrl);
-  return url.toString();
-}
-
 export function canBrowserTranslate(pageUrl: string | undefined): boolean {
   if (!pageUrl) return false;
   try {
@@ -23,4 +14,33 @@ export function canBrowserTranslate(pageUrl: string | undefined): boolean {
   } catch {
     return false;
   }
+}
+
+export const GOOGLE_IN_PAGE_FAILED =
+  "浏览器原页翻译没有调起来。没有跳转到 translate.google.com，页面保持原样。没有做 LLM 翻译。";
+
+export type GooglePageDecision =
+  | { ok: true; targetLanguage: string }
+  | { ok: false; message: string };
+
+export function decideGooglePage(input: {
+  pageUrl: string | undefined;
+  targetLang: string;
+  /** 当前浏览器是否提供 chrome.tabs.translate。 */
+  inPageApi: boolean;
+}): GooglePageDecision {
+  if (!canBrowserTranslate(input.pageUrl)) {
+    return {
+      ok: false,
+      message: "当前页面不能唤起浏览器翻译，只支持普通 http(s) 网页。没有改动页面，也没有跳转。",
+    };
+  }
+  if (!input.inPageApi) {
+    return {
+      ok: false,
+      message:
+        "当前 Chrome 没有公开的原页翻译接口，没法在本页唤起谷歌翻译。没有跳转到 translate.google.com，也没有做 LLM 翻译。",
+    };
+  }
+  return { ok: true, targetLanguage: googleCode(input.targetLang) };
 }
