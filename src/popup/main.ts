@@ -1,3 +1,4 @@
+import { CROP_OCR_COMMAND, PAGE_TRANSLATE_COMMAND } from "../lib/commands.ts";
 import { SOURCE_LANGUAGES, TARGET_LANGUAGES, isSourceLang, isTargetLang } from "../lib/languages.ts";
 import type { PageControlStatus, PageRunState } from "../lib/inpage.ts";
 import type { GlossaryEntry } from "../lib/glossary.ts";
@@ -31,16 +32,13 @@ const modelSelect = document.querySelector<HTMLSelectElement>("#model");
 const customModel = document.querySelector<HTMLInputElement>("#custom-model");
 const sourceSelect = document.querySelector<HTMLSelectElement>("#source-lang");
 const targetSelect = document.querySelector<HTMLSelectElement>("#target-lang");
-const toggle = document.querySelector<HTMLButtonElement>("#selection-toggle");
-const forceSelectToggle = document.querySelector<HTMLButtonElement>("#force-select-toggle");
 const modeConfirm = document.querySelector<HTMLButtonElement>("#mode-confirm");
 const modeImmediate = document.querySelector<HTMLButtonElement>("#mode-immediate");
-const homeSource = document.querySelector<HTMLSelectElement>("#home-source-lang");
-const homeTarget = document.querySelector<HTMLSelectElement>("#home-target-lang");
+const gestureToggle = document.querySelector<HTMLButtonElement>("#gesture-toggle");
 const homeSelection = document.querySelector<HTMLButtonElement>("#home-selection-toggle");
 const homeForce = document.querySelector<HTMLButtonElement>("#home-force-select");
-const homeModeConfirm = document.querySelector<HTMLButtonElement>("#home-mode-confirm");
-const homeModeImmediate = document.querySelector<HTMLButtonElement>("#home-mode-immediate");
+const hotkeyPage = document.querySelector<HTMLElement>("#hotkey-page");
+const hotkeyCrop = document.querySelector<HTMLElement>("#hotkey-crop");
 const ocrButton = document.querySelector<HTMLButtonElement>("#screenshot-ocr");
 const ocrNote = document.querySelector<HTMLElement>("#ocr-note");
 const err = document.querySelector<HTMLElement>("#err");
@@ -60,9 +58,9 @@ if (
   !homeView || !settingsView || !glossaryView || !pageStatus || !statusLabel || !statusHint || !progress || !progressBar ||
   !startButton || !stopButton || !clearButton || !backHome ||
   !keyInput || !modelSelect || !customModel || !sourceSelect || !targetSelect ||
-  !toggle || !forceSelectToggle || !modeConfirm || !modeImmediate || !err || !errTitle || !errBody || !ok || !okTitle || !okBody ||
+  !modeConfirm || !modeImmediate || !gestureToggle || !err || !errTitle || !errBody || !ok || !okTitle || !okBody ||
   !testButton || !saveButton || !rows || !termSource || !termTarget || !glossaryError ||
-  !homeSource || !homeTarget || !homeSelection || !homeForce || !homeModeConfirm || !homeModeImmediate || !ocrButton || !ocrNote
+  !homeSelection || !homeForce || !hotkeyPage || !hotkeyCrop || !ocrButton || !ocrNote
 ) {
   throw new Error("设置页结构不完整");
 }
@@ -70,16 +68,14 @@ if (
 const ui = {
   homeView, settingsView, glossaryView, pageStatus, statusLabel, statusHint, progress, progressBar,
   startButton, stopButton, clearButton, backHome,
-  keyInput, modelSelect, customModel, sourceSelect, targetSelect, toggle,
-  forceSelectToggle, modeConfirm, modeImmediate, err, errTitle, errBody, ok, okTitle, okBody, testButton, saveButton,
+  keyInput, modelSelect, customModel, sourceSelect, targetSelect,
+  modeConfirm, modeImmediate, gestureToggle, err, errTitle, errBody, ok, okTitle, okBody, testButton, saveButton,
   rows, termSource, termTarget, glossaryError,
-  homeSource, homeTarget, homeSelection, homeForce, homeModeConfirm, homeModeImmediate, ocrButton, ocrNote,
+  homeSelection, homeForce, hotkeyPage, hotkeyCrop, ocrButton, ocrNote,
 };
 
 fillSelect(ui.sourceSelect, SOURCE_LANGUAGES);
 fillSelect(ui.targetSelect, TARGET_LANGUAGES);
-fillSelect(ui.homeSource, SOURCE_LANGUAGES);
-fillSelect(ui.homeTarget, TARGET_LANGUAGES);
 
 let openedAsTab = false;
 let glossaryFrom: "home" | "settings" = "settings";
@@ -123,33 +119,25 @@ ui.modelSelect.addEventListener("change", () => {
   clearBanners();
 });
 ui.customModel.addEventListener("input", () => clearBanners());
-bindSwitch(ui.toggle, (next) => {
-  applySelectionSwitch(next);
-  void patchSettings({ selectionEnabled: next });
-});
 bindSwitch(ui.homeSelection, (next) => {
   applySelectionSwitch(next);
   void patchSettings({ selectionEnabled: next });
-});
-bindSwitch(ui.forceSelectToggle, (next) => {
-  applyForceSelectSwitch(next);
-  void patchSettings({ forceSelectEnabled: next });
 });
 bindSwitch(ui.homeForce, (next) => {
   applyForceSelectSwitch(next);
   void patchSettings({ forceSelectEnabled: next });
 });
+bindSwitch(ui.gestureToggle, (next) => {
+  applyGestureSwitch(next);
+  void patchSettings({ gestureEnabled: next });
+});
 ui.modeConfirm.addEventListener("click", () => persistMode("confirm"));
 ui.modeImmediate.addEventListener("click", () => persistMode("immediate"));
-ui.homeModeConfirm.addEventListener("click", () => persistMode("confirm"));
-ui.homeModeImmediate.addEventListener("click", () => persistMode("immediate"));
 bindLang(ui.sourceSelect, "sourceLang");
-bindLang(ui.homeSource, "sourceLang");
 bindLang(ui.targetSelect, "targetLang");
-bindLang(ui.homeTarget, "targetLang");
 
-document.querySelector("#open-glossary")?.addEventListener("click", () => openGlossary("settings"));
 document.querySelector("#home-open-glossary")?.addEventListener("click", () => openGlossary("home"));
+void renderHotkeys();
 document.querySelector("#close-glossary")?.addEventListener("click", () => closeGlossary());
 
 chrome.storage.onChanged.addListener((changes, area) => {
@@ -230,36 +218,33 @@ function applySettings(settings: Settings): void {
 
 function applyShortcuts(settings: Settings): void {
   ui.sourceSelect.value = settings.sourceLang;
-  ui.homeSource.value = settings.sourceLang;
   ui.targetSelect.value = settings.targetLang;
-  ui.homeTarget.value = settings.targetLang;
   applySelectionSwitch(settings.selectionEnabled);
   applyForceSelectSwitch(settings.forceSelectEnabled);
+  applyGestureSwitch(settings.gestureEnabled);
   applyMode(settings.selectionMode);
   renderGlossary(settings.glossary);
 }
 
 function applySelectionSwitch(on: boolean): void {
-  ui.toggle.setAttribute("aria-checked", on ? "true" : "false");
   ui.homeSelection.setAttribute("aria-checked", on ? "true" : "false");
   ui.homeSelection.setAttribute("aria-label", on ? "划词翻译已开启" : "划词翻译已关闭");
 }
 
 function applyForceSelectSwitch(on: boolean): void {
   const label = on ? "允许划选被禁文字，已开启" : "允许划选被禁文字，已关闭";
-  ui.forceSelectToggle.setAttribute("aria-checked", on ? "true" : "false");
-  ui.forceSelectToggle.setAttribute("aria-label", label);
   ui.homeForce.setAttribute("aria-checked", on ? "true" : "false");
   ui.homeForce.setAttribute("aria-label", label);
 }
 
+function applyGestureSwitch(on: boolean): void {
+  ui.gestureToggle.setAttribute("aria-checked", on ? "true" : "false");
+  ui.gestureToggle.setAttribute("aria-label", on ? "启用鼠标手势，已开启" : "启用鼠标手势，已关闭");
+}
+
 function applyMode(mode: SelectionMode): void {
-  const confirm = mode === "confirm" ? "true" : "false";
-  const immediate = mode === "immediate" ? "true" : "false";
-  ui.modeConfirm.setAttribute("aria-pressed", confirm);
-  ui.homeModeConfirm.setAttribute("aria-pressed", confirm);
-  ui.modeImmediate.setAttribute("aria-pressed", immediate);
-  ui.homeModeImmediate.setAttribute("aria-pressed", immediate);
+  ui.modeConfirm.setAttribute("aria-pressed", mode === "confirm" ? "true" : "false");
+  ui.modeImmediate.setAttribute("aria-pressed", mode === "immediate" ? "true" : "false");
 }
 
 function currentMode(): SelectionMode {
@@ -354,9 +339,10 @@ async function saveForm(): Promise<void> {
         model: choice.model,
         sourceLang: ui.sourceSelect.value,
         targetLang,
-        selectionEnabled: ui.toggle.getAttribute("aria-checked") === "true",
+        selectionEnabled: current.selectionEnabled,
         selectionMode: currentMode(),
-        forceSelectEnabled: ui.forceSelectToggle.getAttribute("aria-checked") === "true",
+        forceSelectEnabled: current.forceSelectEnabled,
+        gestureEnabled: ui.gestureToggle.getAttribute("aria-checked") === "true",
         glossary: current.glossary,
       });
     });
@@ -440,6 +426,19 @@ function showOk(title: string, message: string): void {
 function clearBanners(): void {
   ui.err.hidden = true;
   ui.ok.hidden = true;
+}
+
+async function renderHotkeys(): Promise<void> {
+  if (!chrome.commands?.getAll) return;
+  try {
+    const commands = await chrome.commands.getAll();
+    const page = commands.find((item) => item.name === PAGE_TRANSLATE_COMMAND)?.shortcut;
+    const crop = commands.find((item) => item.name === CROP_OCR_COMMAND)?.shortcut;
+    ui.hotkeyPage.textContent = page || "未设置";
+    ui.hotkeyCrop.textContent = crop || "未设置";
+  } catch {
+    // 静态文案就是建议键 Alt+T / Alt+S。
+  }
 }
 
 type PageCommand = "page-ai-start" | "page-ai-stop" | "page-ai-clear" | "page-ai-status";

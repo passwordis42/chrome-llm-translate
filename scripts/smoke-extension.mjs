@@ -271,17 +271,22 @@ try {
   await popup.getByRole("button", { name: /截图识译/ }).waitFor();
   if (await popup.locator("#api-key").isVisible()) fail("主弹窗不该出现 API Key");
   if (await popup.locator("#model").isVisible()) fail("主弹窗不该出现模型选择");
-  await popup.locator("#home-target-lang").selectOption("ja");
+  if (await popup.locator("#home-target-lang").count()) fail("主弹窗不该再放目标语言");
+  if (await popup.locator("#home-mode-confirm").count()) fail("主弹窗不该再放划词模式");
+  await popup.locator("#hotkey-tip").waitFor();
+  await popup.getByRole("button", { name: "设置", exact: true }).click();
+  await popup.getByRole("heading", { name: "设置" }).waitFor();
+  const gestureOn = await popup.locator("#gesture-toggle").getAttribute("aria-checked");
+  if (gestureOn !== "true") fail("鼠标手势默认应开启");
+  await popup.locator("#target-lang").selectOption("ja");
   await popup.waitForTimeout(300);
   const picked = await sw.evaluate(async () => {
     const bag = await chrome.storage.local.get("yifan.settings.v1");
     return bag["yifan.settings.v1"]?.targetLang ?? "";
   });
-  if (picked !== "ja") fail(`主弹窗目标语言没有马上写入: ${picked}`);
-  await popup.locator("#home-target-lang").selectOption("zh");
+  if (picked !== "ja") fail(`设置页目标语言没有马上写入: ${picked}`);
+  await popup.locator("#target-lang").selectOption("zh");
   await popup.waitForTimeout(200);
-  await popup.getByRole("button", { name: "设置", exact: true }).click();
-  await popup.getByRole("heading", { name: "设置" }).waitFor();
   const defaultModel = await popup.locator("#model").inputValue();
   if (defaultModel !== "qwen3.7-plus") fail(`默认模型不是 qwen3.7-plus: ${defaultModel}`);
   const confirmPressed = await popup.locator("#mode-confirm").getAttribute("aria-pressed");

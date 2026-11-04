@@ -2,8 +2,10 @@ import { dismissConfirm, isConfirmOpen, showConfirm, showNotice } from "./confir
 import { dismissOcrUi, isOcrUiActive, startCrop } from "./crop.ts";
 import { isYifanEvent } from "./dom.ts";
 import { closeSelectionFloat, currentFloatText, initFloat, isFloatOpen, openSelectionFloat, repositionFloat } from "./float.ts";
+import { mountPageGesture } from "./gesture.ts";
 import { clearInlinePage, initPage, isInlinePageOpen, pageStatus, startInlinePage, stopInlinePage, syncToolbarPair } from "./pageview.ts";
 import { closeSelectConfirm, currentSelectConfirmText, isSelectConfirmOpen, openSelectConfirm, repositionSelectConfirm } from "./select-confirm.ts";
+import { missingKeyNotice, type ShortcutAction } from "../lib/commands.ts";
 import type { PageControlStatus } from "../lib/inpage.ts";
 import type { ToPageMessage } from "../lib/messages.ts";
 import { cleanSelection, selectionOffer } from "../lib/selection.ts";
@@ -20,6 +22,14 @@ if (!scope.__YIFAN_BOOTED__) {
 function boot(): void {
   let settings = defaultSettings();
   let ready = false;
+  // 必须先于 force-select 挂到 window，否则禁选开启时右键 mousedown 到不了后面的监听。
+  mountPageGesture(document, {
+    isEnabled: () => ready && settings.gestureEnabled,
+    shouldIgnore: (event) => isYifanEvent(event) || isEditableTarget(event.target),
+    onAction: (action) => {
+      void runShortcutAction(action);
+    },
+  });
   const forceSelect = createForceSelect(document, {
     onForcedMouseDown() {
       closeSelectionFloat();
@@ -160,20 +170,18 @@ function boot(): void {
       clearInlinePage();
       return pageStatus();
     }
+    if (message.type === "shortcut-notice") {
+      const title = message.title.trim();
+      const body = message.message.trim();
+      if (title && body) await showNotice(title, body);
+      return;
+    }
     if (message.type === "show-page-ai" || message.type === "page-ai-start") {
-      closeSelectionFloat();
-      closeSelectConfirm();
-      const opened = await startInlinePage();
-      if (opened === "empty") {
-        await showNotice("一翻 · 整页 AI", "这一页没有找到可翻译的段落。没有改动原文。");
-      }
+      await beginPageTranslate();
       return pageStatus();
     }
     if (message.type === "start-crop-ocr") {
-      closeSelectionFloat();
-      closeSelectConfirm();
-      dismissConfirm();
-      startCrop();
+      beginCrop();
       return;
     }
     if (message.type === "show-page-google") {
@@ -189,4 +197,47 @@ function boot(): void {
       }
     }
   }
+
+  async function runShortcutAction(action: ShortcutAction): Promise<void> {
+    if (!settings.apiKey.trim()) {
+      const notice = missingKeyNotice(action);
+      await showNotice(notice.title, notice.message);
+      return;
+    }
+    if (action === "crop") {
+      beginCrop();
+      return;
+    }
+    await beginPageTranslate();
+  }
+
+  async function beginPageTranslate(): Promise<void> {
+    closeSelectionFloat();
+    closeSelectConfirm();
+    const opened = await startInlinePage();
+    if (opened === "empty") {
+      await showNotice("一翻 · 整页 AI", "这一页没有找到可翻译的段落。没有改动原文。");
+    }
+  }
+
+  function beginCrop(): void {
+    closeSelectionFloat();
+    closeSelectConfirm();
+    dismissConfirm();
+    startCrop();
+  }
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  const field = target.closest("input, textarea, select, [contenteditable]");
+  if (!field) return false;
+  if (field instanceof HTMLInputElement) {
+    if (field.disabled || field.readOnly) return false;
+    return !/^(button|checkbox|radio|submit|reset|file|image|color|range)$/i.test(field.type);
+  }
+  if (field instanceof HTMLTextAreaElement) return !field.disabled && !field.readOnly;
+  if (field instanceof HTMLSelectElement) return !field.disabled;
+  const editable = field.getAttribute("contenteditable");
+  return editable != null && editable.toLowerCase() !== "false";
 }

@@ -1,3 +1,10 @@
+import {
+  commandToPageMessage,
+  decideShortcut,
+  injectionFailedNotice,
+  isHttpPageUrl,
+  type ShortcutNotice,
+} from "../lib/commands.ts";
 import { decideGooglePage, GOOGLE_IN_PAGE_FAILED } from "../lib/google.ts";
 import { TranslateError, missingKeyError } from "../lib/errors.ts";
 import { menuItems } from "../lib/menu.ts";
@@ -26,6 +33,10 @@ chrome.runtime.onInstalled.addListener(() => {
 
 chrome.runtime.onStartup.addListener(() => {
   setupMenus();
+});
+
+chrome.commands.onCommand.addListener((command) => {
+  void runShortcut(command);
 });
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
@@ -74,15 +85,63 @@ async function dispatchMenu(id: string, tab: chrome.tabs.Tab | undefined, select
   }
 }
 
-async function deliver(tabId: number, message: ToPageMessage): Promise<void> {
+async function runShortcut(command: string): Promise<void> {
+  const tab = await activeTab();
+  const settings = await readSettings();
+  const decision = decideShortcut({
+    command,
+    url: tab?.url,
+    hasApiKey: settings.apiKey.trim().length > 0,
+  });
+  if (!decision) return;
+  if (decision.deliver && tab?.id != null) {
+    const delivered = await deliver(tab.id, commandToPageMessage(decision.action));
+    if (delivered) return;
+    await notify(injectionFailedNotice(decision.action));
+    return;
+  }
+  const notice = decision.notice ?? injectionFailedNotice(decision.action);
+  if (tab?.id != null && decision.notice && isHttpPageUrl(tab.url)) {
+    const shown = await deliver(tab.id, {
+      type: "shortcut-notice",
+      title: notice.title,
+      message: notice.message,
+    });
+    if (shown) return;
+  }
+  await notify(notice);
+}
+
+async function notify(notice: ShortcutNotice): Promise<void> {
+  try {
+    await chrome.notifications.create("yifan-shortcut", {
+      type: "basic",
+      iconUrl: "icons/icon128.png",
+      title: notice.title,
+      message: notice.message,
+    });
+  } catch {
+    try {
+      await chrome.action.setBadgeBackgroundColor({ color: "#b42318" });
+      await chrome.action.setBadgeText({ text: "!" });
+      await chrome.action.setTitle({ title: `${notice.title}：${notice.message}` });
+    } catch {
+      // 命令回调里不再抛，避免看起来像静默失败后又爆错。
+    }
+  }
+}
+
+async function deliver(tabId: number, message: ToPageMessage): Promise<boolean> {
   try {
     await chrome.tabs.sendMessage(tabId, message);
+    return true;
   } catch {
     try {
       await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] });
       await chrome.tabs.sendMessage(tabId, message);
+      return true;
     } catch {
-      // 特殊页面（商店、PDF、chrome://）不能注入。不翻译。
+      return false;
     }
   }
 }

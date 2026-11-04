@@ -225,7 +225,7 @@ describe("recognize and translate", () => {
   });
 });
 
-describe("v0.1.7 surfaces", () => {
+describe("v0.1.8 surfaces", () => {
   it("puts shortcuts and screenshot entry on the home popup, and keeps key and model in settings", () => {
     const html = readFileSync(new URL("../popup/popup.html", import.meta.url), "utf8");
     const { document } = parseHTML(html);
@@ -234,15 +234,19 @@ describe("v0.1.7 surfaces", () => {
     assert.equal(home.querySelector("#api-key"), null);
     assert.equal(home.querySelector("#model"), null);
     assert.equal(home.querySelector("#custom-model"), null);
-    assert.equal(home.querySelector("#home-source-lang")?.getAttribute("aria-label"), "源语言");
-    assert.equal(home.querySelector("#home-target-lang")?.getAttribute("aria-label"), "目标语言");
+    assert.equal(home.querySelector("#home-source-lang"), null);
+    assert.equal(home.querySelector("#home-target-lang"), null);
+    assert.equal(home.querySelector("#home-mode-confirm"), null);
     assert.equal(home.querySelector("#home-selection-toggle")?.getAttribute("aria-checked"), "true");
-    assert.equal(home.querySelector("#home-mode-confirm")?.textContent, "先确认再翻");
-    assert.equal(home.querySelector("#home-mode-confirm")?.getAttribute("aria-pressed"), "true");
-    assert.equal(home.querySelector("#home-mode-immediate")?.textContent, "划完即翻");
     assert.equal(home.querySelector("#home-force-select")?.getAttribute("aria-checked"), "false");
     assert.match(home.querySelector("#home-open-glossary")?.textContent ?? "", /术语本/);
     assert.match(home.querySelector("#screenshot-ocr")?.textContent ?? "", /截图识译/);
+    assert.match(home.querySelector("#hotkey-tip")?.textContent ?? "", /Alt\+T/);
+    assert.match(home.querySelector("#hotkey-tip")?.textContent ?? "", /Alt\+S/);
+    assert.match(home.querySelector("#hotkey-tip")?.textContent ?? "", /⌝/);
+    assert.equal(document.querySelector("#settings-view #source-lang")?.getAttribute("aria-label"), "源语言");
+    assert.equal(document.querySelector("#settings-view #mode-confirm")?.textContent, "先确认再翻");
+    assert.equal(document.querySelector("#settings-view #gesture-toggle")?.getAttribute("aria-checked"), "true");
     assert.equal(document.querySelector("#settings-view #api-key")?.getAttribute("type"), "password");
     assert.equal(document.querySelector("#settings-view #model option[selected]")?.getAttribute("value"), "qwen3.7-plus");
     assert.equal(menuItems().some((item) => item.title === "框选识译…"), true);

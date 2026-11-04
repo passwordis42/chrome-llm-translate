@@ -50,6 +50,8 @@ export interface Settings {
   forceSelectEnabled: boolean;
   /** 框选识译用的视觉模型。不出现在主弹窗。 */
   visionModel: string;
+  /** 右键拐角手势。新装默认开；关掉后只留快捷键和按钮。 */
+  gestureEnabled: boolean;
   glossary: GlossaryEntry[];
 }
 
@@ -74,6 +76,7 @@ export function defaultSettings(): Settings {
     selectionMode: "confirm",
     forceSelectEnabled: false,
     visionModel: DEFAULT_VISION_MODEL,
+    gestureEnabled: true,
     glossary: [],
   };
 }
@@ -130,6 +133,7 @@ export function normalizeSettings(raw: unknown): Settings {
     selectionMode: normalizeSelectionMode(record.selectionMode),
     forceSelectEnabled: record.forceSelectEnabled === true,
     visionModel: normalizeVisionModel(record.visionModel),
+    gestureEnabled: typeof record.gestureEnabled === "boolean" ? record.gestureEnabled : true,
     glossary: normalizeGlossary(record.glossary),
   };
 }
