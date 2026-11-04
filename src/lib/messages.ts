@@ -44,10 +44,18 @@ export interface ShowPageMessage {
 
 export interface PageAiControlMessage {
   type: "page-ai-start" | "page-ai-stop" | "page-ai-clear" | "page-ai-status";
+  /** 来自 chrome.commands 时带上，避免和内容脚本的同一下按键做两次。 */
+  via?: "command";
 }
 
 export interface StartCropMessage {
   type: "start-crop-ocr";
+  via?: "command";
+}
+
+export interface ToggleSelectionMessage {
+  type: "toggle-selection";
+  via?: "command";
 }
 
 export interface ShortcutNoticeMessage {
@@ -77,4 +85,5 @@ export type ToPageMessage =
   | ShowPageMessage
   | PageAiControlMessage
   | StartCropMessage
+  | ToggleSelectionMessage
   | ShortcutNoticeMessage;

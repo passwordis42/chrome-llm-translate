@@ -10,6 +10,7 @@ import {
   isProviderId,
   type ProviderId,
 } from "./providers.ts";
+import { defaultShortcuts, normalizeShortcuts, shortcutsStorageMatches, type ManagedShortcuts } from "./shortcuts.ts";
 
 export { CURATED_MODELS, DEFAULT_MODEL, DEFAULT_VISION_MODEL, MODEL_TIERS };
 
@@ -49,8 +50,10 @@ export interface Settings {
   selectionMode: SelectionMode;
   /** 打开后才强制放开站点禁划选的正文。新装默认关。 */
   forceSelectEnabled: boolean;
-  /** 右键拐角手势。新装默认开；关掉后只留快捷键和按钮。 */
+  /** 右键拐角手势。新装默认开；关掉后三条拐角都不触发，快捷键和按钮仍可用。 */
   gestureEnabled: boolean;
+  /** 扩展自管的三条快捷键。缺省时是 Alt+T / Alt+S / Alt+E。 */
+  shortcuts: ManagedShortcuts;
   glossary: GlossaryEntry[];
 }
 
@@ -79,6 +82,7 @@ export function defaultSettings(): Settings {
     forceSelectEnabled: false,
     visionModel: DEFAULT_VISION_MODEL,
     gestureEnabled: true,
+    shortcuts: defaultShortcuts(),
     glossary: [],
   };
 }
@@ -177,6 +181,7 @@ export function normalizeSettings(raw: unknown): Settings {
     selectionMode: normalizeSelectionMode(record.selectionMode),
     forceSelectEnabled: record.forceSelectEnabled === true,
     gestureEnabled: typeof record.gestureEnabled === "boolean" ? record.gestureEnabled : true,
+    shortcuts: normalizeShortcuts(record.shortcuts),
     glossary: normalizeGlossary(record.glossary),
   };
 }
@@ -204,11 +209,18 @@ export function activateProvider(settings: Settings, provider: ProviderId): Sett
   return normalizeSettings({ ...settings, provider, providers: settings.providers });
 }
 
+/** 旧版没有快捷键槽，或槽和规范化结果不一致时，要把默认或纠正后的三条写回去。 */
+export function shouldRewriteSettings(raw: unknown): boolean {
+  if (isLegacySettingsRecord(raw)) return true;
+  const shortcuts = raw && typeof raw === "object" ? (raw as { shortcuts?: unknown }).shortcuts : undefined;
+  return !shortcutsStorageMatches(shortcuts, normalizeShortcuts(shortcuts));
+}
+
 export function readSettings(): Promise<Settings> {
   return chrome.storage.local.get(STORAGE_KEY).then(async (bag) => {
     const raw = bag[STORAGE_KEY];
     const settings = normalizeSettings(raw);
-    if (isLegacySettingsRecord(raw)) {
+    if (shouldRewriteSettings(raw)) {
       await chrome.storage.local.set({ [STORAGE_KEY]: settings });
     }
     return settings;

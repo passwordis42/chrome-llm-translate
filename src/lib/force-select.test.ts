@@ -197,14 +197,16 @@ describe("force select settings ui", () => {
     assert.equal(document.querySelector("#settings-view #selection-toggle"), null);
     const gesture = document.querySelector("#gesture-toggle");
     assert.equal(gesture?.getAttribute("aria-checked"), "true");
-    assert.equal(gesture?.closest(".toggle-row")?.querySelector(".new-tag")?.textContent, "新");
+    assert.equal(gesture?.closest(".toggle-row")?.querySelector(".new-tag"), null);
+    assert.match(gesture?.closest(".toggle-row")?.textContent ?? "", /⌞/);
+    assert.equal(document.querySelector("#shortcut-block .new-tag")?.textContent, "新");
     assert.match(css, /\.new-tag/);
 
     const manifest = JSON.parse(readFileSync(new URL("../manifest.json", import.meta.url), "utf8")) as {
       version: string;
       content_scripts: Array<{ run_at?: string }>;
     };
-    assert.equal(manifest.version, "0.1.9");
+    assert.equal(manifest.version, "0.1.10");
     assert.equal(manifest.content_scripts[0]?.run_at, "document_start");
 
     const content = readFileSync(new URL("../content/index.ts", import.meta.url), "utf8");

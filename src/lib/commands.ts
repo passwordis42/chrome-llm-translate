@@ -3,20 +3,25 @@ import type { GestureAction } from "./gesture.ts";
 
 export const PAGE_TRANSLATE_COMMAND = "start-page-translate";
 export const CROP_OCR_COMMAND = "start-crop-ocr";
+export const TOGGLE_SELECTION_COMMAND = "toggle-selection";
 
 export const SUGGESTED_PAGE_SHORTCUT = "Alt+T";
 export const SUGGESTED_CROP_SHORTCUT = "Alt+S";
+export const SUGGESTED_SELECTION_SHORTCUT = "Alt+E";
 
 export type ShortcutAction = GestureAction;
 
 export function shortcutAction(command: string): ShortcutAction | null {
   if (command === PAGE_TRANSLATE_COMMAND) return "page";
   if (command === CROP_OCR_COMMAND) return "crop";
+  if (command === TOGGLE_SELECTION_COMMAND) return "selection";
   return null;
 }
 
 export function commandToPageMessage(action: ShortcutAction): ToPageMessage {
-  return action === "page" ? { type: "page-ai-start" } : { type: "start-crop-ocr" };
+  if (action === "page") return { type: "page-ai-start", via: "command" };
+  if (action === "crop") return { type: "start-crop-ocr", via: "command" };
+  return { type: "toggle-selection", via: "command" };
 }
 
 /** 内容脚本只注入 http/https。chrome://、edge://、商店、PDF 查看器都不算可操作页。 */
@@ -46,7 +51,7 @@ export function decideShortcut(input: {
   if (!isHttpPageUrl(input.url)) {
     return { action, deliver: false, notice: unavailablePageNotice(action, input.url) };
   }
-  if (!input.hasApiKey) {
+  if (action !== "selection" && !input.hasApiKey) {
     return { action, deliver: false, notice: missingKeyNotice(action) };
   }
   return { action, deliver: true, notice: null };
@@ -57,6 +62,12 @@ export function missingKeyNotice(action: ShortcutAction): ShortcutNotice {
     return {
       title: "一翻 · 截图识译",
       message: "请先在设置中填写 API Key。不会假翻。没有改动正文。",
+    };
+  }
+  if (action === "selection") {
+    return {
+      title: "一翻 · 划词",
+      message: "请先在设置中填写 API Key。不会假翻。",
     };
   }
   return {
@@ -73,6 +84,12 @@ export function unavailablePageNotice(action: ShortcutAction, url?: string): Sho
       message: `${where}，不能截图识译。请打开普通网页后再试。没有改动正文。`,
     };
   }
+  if (action === "selection") {
+    return {
+      title: "一翻 · 划词",
+      message: `${where}，不能切换划词。请打开普通网页后再试。`,
+    };
+  }
   return {
     title: "一翻 · 整页",
     message: `${where}，不能整页翻译。请打开普通网页后再试。`,
@@ -84,6 +101,12 @@ export function injectionFailedNotice(action: ShortcutAction): ShortcutNotice {
     return {
       title: "一翻 · 截图识译",
       message: "这个页面不能截图识译。请打开普通网页后再试。没有改动正文。",
+    };
+  }
+  if (action === "selection") {
+    return {
+      title: "一翻 · 划词",
+      message: "这个页面不能切换划词。请打开普通网页后再试。",
     };
   }
   return {

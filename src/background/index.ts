@@ -31,6 +31,7 @@ function setupMenus(): void {
 chrome.runtime.onInstalled.addListener(() => {
   setupMenus();
   void injectOpenTabs();
+  void readSettings();
 });
 
 chrome.runtime.onStartup.addListener(() => {

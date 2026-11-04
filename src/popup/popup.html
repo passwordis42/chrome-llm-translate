@@ -13,7 +13,7 @@
       <img class="logo" src="icons/icon128.png" width="28" height="28" alt="" />
       <div class="hd-text">
         <h1>一翻</h1>
-        <div class="sub">整页 AI · v0.1.9</div>
+        <div class="sub">整页 AI · v0.1.10</div>
       </div>
       <button class="gear" id="open-settings" type="button" aria-label="设置" title="设置">
         <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
@@ -60,8 +60,8 @@
         <button class="ocr-btn" id="screenshot-ocr" type="button">✂ 截图识译</button>
         <p class="ocr-note" id="ocr-note" hidden></p>
       </div>
-      <div class="hotkey-tip" id="hotkey-tip" data-v="0.1.8">
-        <strong id="hotkey-page">Alt+T</strong> 整页 · <strong id="hotkey-crop">Alt+S</strong> 识译 · 右键拖 <strong>⌝</strong>/<strong>⌟</strong>
+      <div class="hotkey-tip" id="hotkey-tip" data-v="0.1.10">
+        <strong id="hotkey-page">Alt+T</strong> 整页 · <strong id="hotkey-crop">Alt+S</strong> 识译 · <strong id="hotkey-selection">Alt+E</strong> 划词 · 右键 <strong>⌝</strong>/<strong>⌟</strong>/<strong>⌞</strong>
       </div>
       <div class="foot">
         <button class="settings-link" id="settings-link" type="button">设置 →</button>
@@ -75,7 +75,7 @@
       <img class="logo" src="icons/icon128.png" width="28" height="28" alt="" />
       <div>
         <h1>设置</h1>
-        <div class="sub">API / 厂商 / 额度 · v0.1.9</div>
+        <div class="sub">快捷键 / API / 厂商 · v0.1.10</div>
       </div>
     </div>
     <div class="body">
@@ -144,11 +144,42 @@
           <button type="button" id="mode-immediate" aria-pressed="false">划完即翻</button>
         </div>
       </div>
+      <div class="hk-block" id="shortcut-block" data-v="0.1.10" aria-label="快捷键">
+        <div class="block-title">
+          <span>快捷键<span class="new-tag">新</span></span>
+        </div>
+        <div class="hk-row">
+          <div class="hk-label">
+            <div class="hk-title">整页开始/继续</div>
+          </div>
+          <span class="hk-key" id="hk-page" aria-label="当前键 Alt+T">Alt+T</span>
+          <button class="btn-sm" id="rebind-page" type="button">改键</button>
+        </div>
+        <div class="hk-row">
+          <div class="hk-label">
+            <div class="hk-title">截图识译</div>
+          </div>
+          <span class="hk-key" id="hk-crop" aria-label="当前键 Alt+S">Alt+S</span>
+          <button class="btn-sm" id="rebind-crop" type="button">改键</button>
+        </div>
+        <div class="hk-row">
+          <div class="hk-label">
+            <div class="hk-title">划词翻译开/关</div>
+          </div>
+          <span class="hk-key" id="hk-selection" aria-label="当前键 Alt+E">Alt+E</span>
+          <button class="btn-sm" id="rebind-selection" type="button">改键</button>
+        </div>
+        <div class="hk-foot">
+          <p class="hk-note">也可在浏览器扩展快捷键页改系统级命令；以扩展内设置为准。</p>
+          <button class="btn-sm primary" id="restore-shortcuts" type="button">恢复默认</button>
+        </div>
+        <p class="hk-error" id="hk-error" hidden></p>
+      </div>
       <div class="sec-label">快捷操作</div>
       <div class="toggle-row" id="gesture-row">
         <div>
-          <div class="t-title">启用鼠标手势<span class="new-tag">新</span></div>
-          <div class="t-desc">按住右键拖拐角——⌝ 整页，⌟ 截图识译</div>
+          <div class="t-title">启用鼠标手势</div>
+          <div class="t-desc">按住右键拖拐角——⌝ 整页，⌟ 识译，⌞ 划词开/关</div>
         </div>
         <button class="switch" id="gesture-toggle" type="button" role="switch" aria-checked="true" aria-label="启用鼠标手势，已开启"></button>
       </div>
