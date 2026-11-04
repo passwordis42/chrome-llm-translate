@@ -2,6 +2,7 @@ import { decideGooglePage, GOOGLE_IN_PAGE_FAILED } from "../lib/google.ts";
 import { TranslateError, missingKeyError } from "../lib/errors.ts";
 import { menuItems } from "../lib/menu.ts";
 import { PORT_NAME, type PortOutbound, type StartMessage, type ToPageMessage, type ToWorkerMessage } from "../lib/messages.ts";
+import { OcrTranslateError, recognizeAndTranslate } from "../lib/ocr.ts";
 import { testConnection } from "../lib/qwen.ts";
 import { INVALID_MODEL_MESSAGE, isModelId, readSettings } from "../lib/settings.ts";
 import { runTranslationJob } from "../lib/translate-job.ts";
@@ -66,6 +67,10 @@ async function dispatchMenu(id: string, tab: chrome.tabs.Tab | undefined, select
   }
   if (id === "page-google") {
     await deliver(target.id, { type: "show-page-google" });
+    return;
+  }
+  if (id === "crop-ocr") {
+    await deliver(target.id, { type: "start-crop-ocr" });
   }
 }
 
@@ -132,7 +137,41 @@ async function handleMessage(message: ToWorkerMessage, sender: chrome.runtime.Me
     }
   }
   if (message.type === "google-translate") return openGoogleTranslate(sender);
+  if (message.type === "capture-visible") return captureVisible(sender);
+  if (message.type === "ocr-translate") return translateCrop(message.imageDataUrl);
   return { ok: false, message: "无法识别的请求。" };
+}
+
+async function captureVisible(sender: chrome.runtime.MessageSender) {
+  const windowId = sender.tab?.windowId;
+  if (windowId == null) return { ok: false, message: "找不到当前标签页。没有改动页面。不会假翻。" };
+  try {
+    const dataUrl = await chrome.tabs.captureVisibleTab(windowId, { format: "png" });
+    if (!dataUrl) return { ok: false, message: "截不到当前页面。没有改动正文。不会假翻。" };
+    return { ok: true, dataUrl };
+  } catch {
+    return { ok: false, message: "截不到当前页面。没有改动正文。不会假翻。" };
+  }
+}
+
+async function translateCrop(imageDataUrl: unknown) {
+  const image = typeof imageDataUrl === "string" ? imageDataUrl : "";
+  try {
+    const settings = await readSettings();
+    const result = await recognizeAndTranslate({
+      imageDataUrl: image,
+      settings,
+      signal: new AbortController().signal,
+    });
+    return { ok: true, source: result.source, translation: result.translation };
+  } catch (error) {
+    return {
+      ok: false,
+      title: error instanceof TranslateError ? error.title : "识译失败",
+      message: error instanceof TranslateError ? error.message : "识译失败。不会假翻。页面正文没有改动。",
+      source: error instanceof OcrTranslateError ? error.source : "",
+    };
+  }
 }
 
 async function openGoogleTranslate(sender: chrome.runtime.MessageSender) {

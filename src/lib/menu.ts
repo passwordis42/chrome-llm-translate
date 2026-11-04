@@ -11,6 +11,7 @@ export function menuItems(): MenuItem[] {
     { id: "translate-selection", title: "翻译选中内容", contexts: ["selection"] },
     { id: "page-ai", title: "整页 AI 翻译…", contexts: ["page", "selection", "action"] },
     { id: "page-google", title: "整页谷歌翻译…", contexts: ["page", "selection", "action"] },
+    { id: "crop-ocr", title: "框选识译…", contexts: ["page", "selection", "action"] },
     { id: "sep-settings", type: "separator", contexts: ["page", "selection", "action"] },
     { id: "open-settings", title: "打开设置", contexts: ["page", "selection", "action"] },
   ];

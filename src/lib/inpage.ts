@@ -4,6 +4,8 @@ export const PAGE_BATCH_LIMIT = 200;
 
 export const TOOLBAR_META = "译文直接替换原文；下滑自动续翻；清除可还原";
 export const SCROLL_HINT = "继续下滑将自动续翻未译段落（每批最多 200 段）";
+export const STOPPED_HINT = "已中断 · 已翻段落保留，可继续";
+export const TOOLBAR_STOPPED_HINT = "已中断；已翻段落保留。点「继续翻译」从未译段续翻（每批最多 200 段）。";
 export const CONFIRM_LEAD = "用千问把整页";
 export const CONFIRM_EMPHASIS = "原位替换为译文";
 export const CONFIRM_DETAIL =
@@ -55,7 +57,7 @@ export function derivePageStatus(input: PageRunInput): PageControlStatus {
       ok: true,
       state: "stopped",
       label: "已停止 · 已翻保留",
-      hint: error || "已中断 · 已翻段落保留，可继续",
+      hint: error || STOPPED_HINT,
       canStart: true,
       canStop: false,
       canClear: true,
@@ -97,11 +99,28 @@ export function startKind(state: PageRunState): "fresh" | "resume" | "busy" {
   return "fresh";
 }
 
-export function toolbarChip(state: PageRunState, pair: string): { text: string; live: boolean } {
-  if (state === "running") return { text: `翻译中 · ${pair}`, live: true };
-  if (state === "stopped") return { text: `已停止 · ${pair}`, live: false };
-  if (state === "done") return { text: `已完成 · ${pair}`, live: false };
-  return { text: pair, live: false };
+export function toolbarChip(state: PageRunState, pair: string): {
+  text: string;
+  live: boolean;
+  tone: "run" | "stopped" | "done" | "idle";
+} {
+  if (state === "running") return { text: `翻译中 · ${pair}`, live: true, tone: "run" };
+  if (state === "stopped") return { text: `已停止 · ${pair}`, live: false, tone: "stopped" };
+  if (state === "done") return { text: `已完成 · ${pair}`, live: false, tone: "done" };
+  return { text: pair, live: false, tone: "idle" };
+}
+
+/** 页内工具条：只有已停止才露出「继续翻译」。翻译中以停止为主。复制和清除一直留着。 */
+export function toolbarActions(state: PageRunState): {
+  resume: boolean;
+  stop: boolean;
+  copy: boolean;
+  clear: boolean;
+} {
+  if (state === "running") return { resume: false, stop: true, copy: true, clear: true };
+  if (state === "stopped") return { resume: true, stop: false, copy: true, clear: true };
+  if (state === "done") return { resume: false, stop: false, copy: true, clear: true };
+  return { resume: false, stop: false, copy: false, clear: false };
 }
 
 /** 中断后把未完成段落移出进行中集合，续翻才能再次取到。已完成的留下。 */

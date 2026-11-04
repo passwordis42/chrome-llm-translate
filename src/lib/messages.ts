@@ -39,5 +39,23 @@ export interface PageAiControlMessage {
   type: "page-ai-start" | "page-ai-stop" | "page-ai-clear" | "page-ai-status";
 }
 
-export type ToWorkerMessage = TestConnectionMessage | GoogleTranslateMessage | OpenSettingsMessage;
-export type ToPageMessage = TranslateSelectionMessage | ShowPageMessage | PageAiControlMessage;
+export interface StartCropMessage {
+  type: "start-crop-ocr";
+}
+
+export interface CaptureVisibleMessage {
+  type: "capture-visible";
+}
+
+export interface OcrTranslateMessage {
+  type: "ocr-translate";
+  imageDataUrl: string;
+}
+
+export type ToWorkerMessage =
+  | TestConnectionMessage
+  | GoogleTranslateMessage
+  | OpenSettingsMessage
+  | CaptureVisibleMessage
+  | OcrTranslateMessage;
+export type ToPageMessage = TranslateSelectionMessage | ShowPageMessage | PageAiControlMessage | StartCropMessage;

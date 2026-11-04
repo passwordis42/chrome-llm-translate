@@ -5,6 +5,13 @@ export const STORAGE_KEY = "yifan.settings.v1";
 
 export const DEFAULT_MODEL = "qwen3.7-plus";
 
+/**
+ * 框选识译专用，和文本三档分开。
+ * 主弹窗和设置页都不露出这项；文本模型清单保持 v0.1.2。
+ * 百炼兼容模式的视觉模型，见 README。
+ */
+export const DEFAULT_VISION_MODEL = "qwen3-vl-plus";
+
 export const MODEL_TIERS = [
   {
     id: "fast",
@@ -41,6 +48,8 @@ export interface Settings {
   selectionMode: SelectionMode;
   /** 打开后才强制放开站点禁划选的正文。新装默认关。 */
   forceSelectEnabled: boolean;
+  /** 框选识译用的视觉模型。不出现在主弹窗。 */
+  visionModel: string;
   glossary: GlossaryEntry[];
 }
 
@@ -64,6 +73,7 @@ export function defaultSettings(): Settings {
     selectionEnabled: true,
     selectionMode: "confirm",
     forceSelectEnabled: false,
+    visionModel: DEFAULT_VISION_MODEL,
     glossary: [],
   };
 }
@@ -86,6 +96,14 @@ export function normalizeModelId(value: unknown): string {
 
 export function normalizeSelectionMode(value: unknown): SelectionMode {
   return value === "immediate" ? "immediate" : "confirm";
+}
+
+/** 空的或写坏的视觉模型退回 qwen3-vl-plus，不用文本模型顶上。 */
+export function normalizeVisionModel(value: unknown): string {
+  if (typeof value !== "string") return DEFAULT_VISION_MODEL;
+  const trimmed = value.trim();
+  if (!isModelId(trimmed)) return DEFAULT_VISION_MODEL;
+  return trimmed;
 }
 
 /** Custom text wins when it is non-empty. An empty custom field uses the curated select. */
@@ -111,6 +129,7 @@ export function normalizeSettings(raw: unknown): Settings {
     selectionEnabled: typeof record.selectionEnabled === "boolean" ? record.selectionEnabled : true,
     selectionMode: normalizeSelectionMode(record.selectionMode),
     forceSelectEnabled: record.forceSelectEnabled === true,
+    visionModel: normalizeVisionModel(record.visionModel),
     glossary: normalizeGlossary(record.glossary),
   };
 }
