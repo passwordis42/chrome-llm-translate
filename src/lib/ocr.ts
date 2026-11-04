@@ -1,5 +1,6 @@
 import { TranslateError, missingKeyError, noTextError } from "./errors.ts";
 import { promptName } from "./languages.ts";
+import { NO_VISION_OCR_MESSAGE, visionCallModel } from "./providers.ts";
 import { completeVision } from "./qwen.ts";
 import type { Settings } from "./settings.ts";
 import { runTranslationJob } from "./translate-job.ts";
@@ -116,10 +117,20 @@ export async function recognizeAndTranslate(opts: {
   if (!isImageDataUrl(opts.imageDataUrl)) {
     throw new TranslateError("unknown", "识译失败", "选区图片太大或无效。没有改动页面。不会假翻。", true);
   }
+  const model = visionCallModel(opts.settings);
+  if (!model) {
+    throw new TranslateError(
+      "unknown",
+      "识译失败",
+      `${NO_VISION_OCR_MESSAGE}。不会假翻。页面正文没有改动。`,
+      true,
+    );
+  }
   if (!opts.settings.apiKey.trim()) throw missingKeyError("ocr");
   const recognized = await completeVision({
     apiKey: opts.settings.apiKey.trim(),
-    model: opts.settings.visionModel,
+    model,
+    provider: opts.settings.provider,
     prompt: buildOcrPrompt(),
     imageDataUrl: opts.imageDataUrl,
     signal: opts.signal,

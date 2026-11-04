@@ -221,7 +221,7 @@ describe("shortcut commands", () => {
       permissions: string[];
       commands: Record<string, { description: string; suggested_key: { default: string; mac?: string } }>;
     };
-    assert.equal(manifest.version, "0.1.8");
+    assert.equal(manifest.version, "0.1.9");
     assert.equal(manifest.permissions.includes("notifications"), true);
     const page = manifest.commands[PAGE_TRANSLATE_COMMAND];
     const crop = manifest.commands[CROP_OCR_COMMAND];

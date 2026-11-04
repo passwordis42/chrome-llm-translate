@@ -10,6 +10,8 @@ import { TranslateError, missingKeyError } from "../lib/errors.ts";
 import { menuItems } from "../lib/menu.ts";
 import { PORT_NAME, type PortOutbound, type StartMessage, type ToPageMessage, type ToWorkerMessage } from "../lib/messages.ts";
 import { OcrTranslateError, recognizeAndTranslate } from "../lib/ocr.ts";
+import { isProviderId } from "../lib/providers.ts";
+import { loadQuotaView, readLedger } from "../lib/quota.ts";
 import { testConnection } from "../lib/qwen.ts";
 import { INVALID_MODEL_MESSAGE, isModelId, readSettings } from "../lib/settings.ts";
 import { runTranslationJob } from "../lib/translate-job.ts";
@@ -181,8 +183,9 @@ async function handleMessage(message: ToWorkerMessage, sender: chrome.runtime.Me
       const error = missingKeyError("settings");
       return { ok: false, title: error.title, message: error.message };
     }
+    const provider = isProviderId(message.provider) ? message.provider : "qwen";
     try {
-      await testConnection({ apiKey, model });
+      await testConnection({ apiKey, model, provider });
       return { ok: true };
     } catch (error) {
       return {
@@ -194,6 +197,13 @@ async function handleMessage(message: ToWorkerMessage, sender: chrome.runtime.Me
             : "API Key 无效或网络不可达。请检查后重试——不会假翻。",
       };
     }
+  }
+  if (message.type === "quota-status") {
+    const provider = isProviderId(message.provider) ? message.provider : "qwen";
+    const apiKey = typeof message.apiKey === "string" ? message.apiKey.trim() : "";
+    const ledger = await readLedger();
+    const view = await loadQuotaView({ provider, apiKey, usage: ledger.byProvider[provider] });
+    return { ok: true, view };
   }
   if (message.type === "google-translate") return openGoogleTranslate(sender);
   if (message.type === "capture-visible") return captureVisible(sender);

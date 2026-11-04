@@ -34,6 +34,7 @@ export async function runTranslationJob(opts: {
   await streamChat({
     apiKey: opts.settings.apiKey.trim(),
     model: opts.settings.model,
+    provider: opts.settings.provider,
     system,
     user: protectedText.text,
     signal: opts.signal,

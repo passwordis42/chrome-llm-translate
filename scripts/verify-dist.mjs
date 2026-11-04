@@ -10,7 +10,7 @@ function check(condition, message) {
 
 check(manifest.manifest_version === 3, "manifest_version");
 check(manifest.name === "一翻", "name");
-check(manifest.version === "0.1.8", "version");
+check(manifest.version === "0.1.9", "version");
 check(manifest.commands?.["start-page-translate"]?.suggested_key?.default === "Alt+T", "page shortcut");
 check(manifest.commands?.["start-crop-ocr"]?.suggested_key?.default === "Alt+S", "crop shortcut");
 check(manifest.permissions?.includes("notifications"), "notification permission");
@@ -94,6 +94,14 @@ check(popupJs.includes("page-ai-start") && popupJs.includes("page-ai-stop") && p
 
 const background = readFileSync("dist/background.js", "utf8");
 check(background.includes("dashscope.aliyuncs.com"), "qwen endpoint bundled");
+check(background.includes("api.openai.com"), "openai endpoint bundled");
+check(background.includes("ark.cn-beijing.volces.com"), "volcano endpoint bundled");
+check(background.includes("api.deepseek.com"), "deepseek endpoint bundled");
+check(background.includes("api.moonshot.cn"), "kimi endpoint bundled");
+check(background.includes("/user/balance"), "deepseek balance endpoint bundled");
+check(background.includes("/v1/users/me/balance"), "kimi balance endpoint bundled");
+check(popup.includes("五家 Key 分别保存"), "provider keys stay separate");
+check(popupJs.includes("当前厂商不支持截图识译"), "ocr disabled copy bundled");
 check(background.includes("qwen3.7-plus"), "default model bundled");
 check(background.includes("翻译选中内容"), "context menu copy bundled");
 check(background.includes("框选识译…"), "crop context menu");

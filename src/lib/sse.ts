@@ -1,7 +1,29 @@
+export interface TokenUsage {
+  promptTokens: number;
+  completionTokens: number;
+}
+
 export interface ParsedEvent {
   content: string;
   done: boolean;
   error?: string;
+  usage?: TokenUsage | null;
+}
+
+export function readTokenUsage(json: unknown): TokenUsage | null {
+  if (!json || typeof json !== "object") return null;
+  const usage = (json as { usage?: unknown }).usage;
+  if (!usage || typeof usage !== "object") return null;
+  const record = usage as Record<string, unknown>;
+  const prompt = asCount(record.prompt_tokens ?? record.input_tokens);
+  const completion = asCount(record.completion_tokens ?? record.output_tokens);
+  if (prompt == null && completion == null) return null;
+  return { promptTokens: prompt ?? 0, completionTokens: completion ?? 0 };
+}
+
+function asCount(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return null;
+  return value;
 }
 
 export function parseSseBuffer(buffer: string): { events: string[]; rest: string } {
@@ -15,6 +37,7 @@ export function parseEvent(event: string): ParsedEvent {
   let content = "";
   let done = false;
   let error: string | undefined;
+  let usage: TokenUsage | null = null;
   for (const line of event.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed.startsWith("data:")) continue;
@@ -33,6 +56,8 @@ export function parseEvent(event: string): ParsedEvent {
           message?: { content?: unknown };
         }>;
       };
+      const nextUsage = readTokenUsage(json);
+      if (nextUsage) usage = nextUsage;
       if (json.error) {
         error = typeof json.error.message === "string" ? json.error.message : "请求被拒绝";
       }
@@ -44,19 +69,21 @@ export function parseEvent(event: string): ParsedEvent {
       // 半包或心跳，交给调用方留在 rest 里；这里的单事件解析失败就跳过。
     }
   }
-  return { content, done, error };
+  return { content, done, error, usage };
 }
 
 export async function readSseStream(
   stream: ReadableStream<Uint8Array>,
   onDelta: (text: string) => void,
-): Promise<{ received: boolean }> {
+): Promise<{ received: boolean; usage: TokenUsage | null }> {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   let received = false;
+  let usage: TokenUsage | null = null;
   const handle = (event: string) => {
     const parsed = parseEvent(event);
+    if (parsed.usage) usage = parsed.usage;
     if (parsed.error) {
       throw new Error(parsed.error);
     }
@@ -79,5 +106,5 @@ export async function readSseStream(
   } finally {
     reader.releaseLock();
   }
-  return { received };
+  return { received, usage };
 }

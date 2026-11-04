@@ -13,7 +13,7 @@
       <img class="logo" src="icons/icon128.png" width="28" height="28" alt="" />
       <div class="hd-text">
         <h1>一翻</h1>
-        <div class="sub">整页 AI · v0.1.8</div>
+        <div class="sub">整页 AI · v0.1.9</div>
       </div>
       <button class="gear" id="open-settings" type="button" aria-label="设置" title="设置">
         <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
@@ -75,36 +75,56 @@
       <img class="logo" src="icons/icon128.png" width="28" height="28" alt="" />
       <div>
         <h1>设置</h1>
-        <div class="sub">通义千问 · API / 模型 / 语言</div>
+        <div class="sub">API / 厂商 / 额度 · v0.1.9</div>
       </div>
     </div>
     <div class="body">
-      <div class="field">
-        <div class="label"><span>API Key</span><span class="hint">本地存储，直连千问</span></div>
-        <input id="api-key" type="password" autocomplete="off" spellcheck="false" placeholder="sk-" aria-label="API Key" />
-      </div>
-      <div class="field">
-        <div class="label"><span>模型</span><span class="hint">默认均衡 · qwen3.7-plus</span></div>
-        <select id="model" aria-label="模型">
-          <optgroup label="快速便宜">
-            <option value="qwen3.5-flash">qwen3.5-flash</option>
-            <option value="qwen3.7-flash">qwen3.7-flash</option>
-            <option value="qwen3.8-flash">qwen3.8-flash</option>
-          </optgroup>
-          <optgroup label="均衡">
-            <option value="qwen3.5-plus">qwen3.5-plus</option>
-            <option value="qwen3.6-plus">qwen3.6-plus</option>
-            <option value="qwen3.7-plus" selected>qwen3.7-plus</option>
-          </optgroup>
-          <optgroup label="能力高">
-            <option value="qwen3.7-max">qwen3.7-max</option>
-            <option value="qwen3.8-max">qwen3.8-max</option>
-          </optgroup>
-        </select>
-      </div>
-      <div class="field">
-        <div class="label"><span>自定义 model id</span><span class="hint">可选手填</span></div>
-        <input id="custom-model" type="text" autocomplete="off" spellcheck="false" placeholder="例如 qwen-plus（留空则用上方精选）" aria-label="自定义 model id" />
+      <div class="api-block">
+        <div class="block-title">API 厂商<span class="new-tag">新</span></div>
+        <div class="field">
+          <div class="label"><span>当前厂商</span><span class="hint">五家 Key 分别保存</span></div>
+          <select id="provider" aria-label="当前厂商">
+            <option value="qwen" selected>千问（百炼）</option>
+            <option value="openai">OpenAI</option>
+            <option value="volcano">火山引擎</option>
+            <option value="deepseek">DeepSeek</option>
+            <option value="kimi">Kimi</option>
+          </select>
+        </div>
+        <div class="field">
+          <div class="label"><span>API Key</span><span class="hint" id="key-hint">本地存储 · 直连百炼</span></div>
+          <input id="api-key" type="password" autocomplete="off" spellcheck="false" placeholder="sk-" aria-label="API Key" />
+        </div>
+        <div class="field">
+          <div class="label"><span id="model-label">模型</span><span class="hint" id="model-hint">默认均衡 · qwen3.7-plus</span></div>
+          <select id="model" aria-label="模型">
+            <optgroup label="快速便宜">
+              <option value="qwen3.5-flash">qwen3.5-flash</option>
+              <option value="qwen3.7-flash">qwen3.7-flash</option>
+              <option value="qwen3.8-flash">qwen3.8-flash</option>
+            </optgroup>
+            <optgroup label="均衡">
+              <option value="qwen3.5-plus">qwen3.5-plus</option>
+              <option value="qwen3.6-plus">qwen3.6-plus</option>
+              <option value="qwen3.7-plus" selected>qwen3.7-plus</option>
+            </optgroup>
+            <optgroup label="能力高">
+              <option value="qwen3.7-max">qwen3.7-max</option>
+              <option value="qwen3.8-max">qwen3.8-max</option>
+            </optgroup>
+          </select>
+        </div>
+        <div class="field">
+          <div class="label"><span id="custom-label">自定义 model id</span><span class="hint" id="custom-hint">可选手填</span></div>
+          <input id="custom-model" type="text" autocomplete="off" spellcheck="false" placeholder="例如 qwen-plus（留空则用上方精选）" aria-label="自定义 model id" />
+        </div>
+        <div class="quota" id="quota" role="status" aria-label="额度估算">
+          <div>
+            <div class="q-main" id="quota-main">本次暂无用量 · 本扩展累计估算 ¥0.00</div>
+            <div class="q-sub" id="quota-sub">聊天 Key 查不到账户余额，仅本地估算</div>
+          </div>
+          <span class="badge" id="quota-badge">估算</span>
+        </div>
       </div>
       <div class="row2">
         <div class="field">
@@ -161,7 +181,7 @@
       <button class="close" id="close-glossary" type="button" aria-label="关闭">×</button>
     </div>
     <div class="body">
-      <div class="notice">翻译时若原文命中术语，<strong>优先使用固定译法</strong>，再交给千问处理其余部分。</div>
+      <div class="notice">翻译时若原文命中术语，<strong>优先使用固定译法</strong>，再交给当前模型处理其余部分。</div>
       <div class="table-wrap">
         <table>
           <thead>

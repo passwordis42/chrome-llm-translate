@@ -10,6 +10,7 @@ import type { PageControlStatus } from "../lib/inpage.ts";
 import type { ToPageMessage } from "../lib/messages.ts";
 import { cleanSelection, selectionOffer } from "../lib/selection.ts";
 import { createForceSelect } from "../lib/force-select.ts";
+import { NO_VISION_OCR_MESSAGE, providerSupportsVision } from "../lib/providers.ts";
 import { STORAGE_KEY, defaultSettings, normalizeSettings, readSettings, writeSettings } from "../lib/settings.ts";
 import { isTargetLang } from "../lib/languages.ts";
 
@@ -181,7 +182,7 @@ function boot(): void {
       return pageStatus();
     }
     if (message.type === "start-crop-ocr") {
-      beginCrop();
+      await beginCrop();
       return;
     }
     if (message.type === "show-page-google") {
@@ -220,10 +221,15 @@ function boot(): void {
     }
   }
 
-  function beginCrop(): void {
+  async function beginCrop(): Promise<void> {
     closeSelectionFloat();
     closeSelectConfirm();
     dismissConfirm();
+    settings = await readSettings().catch(() => settings);
+    if (!providerSupportsVision(settings.provider)) {
+      await showNotice("一翻 · 截图识译", NO_VISION_OCR_MESSAGE);
+      return;
+    }
     startCrop();
   }
 }

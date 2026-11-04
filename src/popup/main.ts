@@ -3,13 +3,15 @@ import { SOURCE_LANGUAGES, TARGET_LANGUAGES, isSourceLang, isTargetLang } from "
 import type { PageControlStatus, PageRunState } from "../lib/inpage.ts";
 import type { GlossaryEntry } from "../lib/glossary.ts";
 import type { ToPageMessage } from "../lib/messages.ts";
+import { NO_VISION_OCR_MESSAGE, PROVIDERS, isProviderCurated, isProviderId, providerSupportsVision, type ProviderId } from "../lib/providers.ts";
+import { emptyUsage, estimateView, type QuotaView } from "../lib/quota.ts";
 import {
-  DEFAULT_MODEL,
   STORAGE_KEY,
-  isCuratedModel,
+  activateProvider,
   normalizeSettings,
   readSettings,
   resolveModelChoice,
+  updateProviderSlot,
   writeSettings,
   type SelectionMode,
   type Settings,
@@ -27,9 +29,19 @@ const startButton = document.querySelector<HTMLButtonElement>("#start-page");
 const stopButton = document.querySelector<HTMLButtonElement>("#stop-page");
 const clearButton = document.querySelector<HTMLButtonElement>("#clear-page");
 const backHome = document.querySelector<HTMLButtonElement>("#back-home");
+const providerSelect = document.querySelector<HTMLSelectElement>("#provider");
 const keyInput = document.querySelector<HTMLInputElement>("#api-key");
+const keyHint = document.querySelector<HTMLElement>("#key-hint");
+const modelLabel = document.querySelector<HTMLElement>("#model-label");
+const modelHint = document.querySelector<HTMLElement>("#model-hint");
 const modelSelect = document.querySelector<HTMLSelectElement>("#model");
+const customLabel = document.querySelector<HTMLElement>("#custom-label");
+const customHint = document.querySelector<HTMLElement>("#custom-hint");
 const customModel = document.querySelector<HTMLInputElement>("#custom-model");
+const quota = document.querySelector<HTMLElement>("#quota");
+const quotaMain = document.querySelector<HTMLElement>("#quota-main");
+const quotaSub = document.querySelector<HTMLElement>("#quota-sub");
+const quotaBadge = document.querySelector<HTMLElement>("#quota-badge");
 const sourceSelect = document.querySelector<HTMLSelectElement>("#source-lang");
 const targetSelect = document.querySelector<HTMLSelectElement>("#target-lang");
 const modeConfirm = document.querySelector<HTMLButtonElement>("#mode-confirm");
@@ -57,7 +69,9 @@ const glossaryError = document.querySelector<HTMLElement>("#glossary-error");
 if (
   !homeView || !settingsView || !glossaryView || !pageStatus || !statusLabel || !statusHint || !progress || !progressBar ||
   !startButton || !stopButton || !clearButton || !backHome ||
-  !keyInput || !modelSelect || !customModel || !sourceSelect || !targetSelect ||
+  !providerSelect || !keyInput || !keyHint || !modelLabel || !modelHint || !modelSelect ||
+  !customLabel || !customHint || !customModel || !quota || !quotaMain || !quotaSub || !quotaBadge ||
+  !sourceSelect || !targetSelect ||
   !modeConfirm || !modeImmediate || !gestureToggle || !err || !errTitle || !errBody || !ok || !okTitle || !okBody ||
   !testButton || !saveButton || !rows || !termSource || !termTarget || !glossaryError ||
   !homeSelection || !homeForce || !hotkeyPage || !hotkeyCrop || !ocrButton || !ocrNote
@@ -68,7 +82,9 @@ if (
 const ui = {
   homeView, settingsView, glossaryView, pageStatus, statusLabel, statusHint, progress, progressBar,
   startButton, stopButton, clearButton, backHome,
-  keyInput, modelSelect, customModel, sourceSelect, targetSelect,
+  providerSelect, keyInput, keyHint, modelLabel, modelHint, modelSelect,
+  customLabel, customHint, customModel, quota, quotaMain, quotaSub, quotaBadge,
+  sourceSelect, targetSelect,
   modeConfirm, modeImmediate, gestureToggle, err, errTitle, errBody, ok, okTitle, okBody, testButton, saveButton,
   rows, termSource, termTarget, glossaryError,
   homeSelection, homeForce, hotkeyPage, hotkeyCrop, ocrButton, ocrNote,
@@ -79,6 +95,8 @@ fillSelect(ui.targetSelect, TARGET_LANGUAGES);
 
 let openedAsTab = false;
 let glossaryFrom: "home" | "settings" = "settings";
+let formProvider: ProviderId = "qwen";
+let quotaToken = 0;
 
 if (window.innerWidth > 520) document.body.classList.add("is-tab");
 chrome.tabs.getCurrent((tab) => {
@@ -114,6 +132,17 @@ function enqueue(task: () => Promise<void>): Promise<void> {
 void readSettings().then((settings) => applySettings(settings)).catch(() => showError("连接失败", "读不到本地设置。"));
 
 ui.keyInput.addEventListener("input", () => clearBanners());
+ui.keyInput.addEventListener("blur", () => {
+  void refreshQuota();
+});
+ui.providerSelect.addEventListener("change", () => {
+  const next = ui.providerSelect.value;
+  if (!isProviderId(next) || next === formProvider) {
+    ui.providerSelect.value = formProvider;
+    return;
+  }
+  void switchProvider(next);
+});
 ui.modelSelect.addEventListener("change", () => {
   ui.customModel.value = "";
   clearBanners();
@@ -142,7 +171,9 @@ document.querySelector("#close-glossary")?.addEventListener("click", () => close
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local" || !changes[STORAGE_KEY]) return;
-  applyShortcuts(normalizeSettings(changes[STORAGE_KEY].newValue));
+  const settings = normalizeSettings(changes[STORAGE_KEY].newValue);
+  applyShortcuts(settings);
+  if (settings.provider !== formProvider && !ui.settingsView.hidden) applyProviderFields(settings);
 });
 
 ui.testButton.addEventListener("click", () => void testConnection());
@@ -176,6 +207,7 @@ function showSettings(): void {
   ui.homeView.hidden = true;
   ui.glossaryView.hidden = true;
   ui.settingsView.hidden = false;
+  void refreshQuota();
 }
 
 function showHome(): void {
@@ -205,15 +237,48 @@ function fillSelect(select: HTMLSelectElement, options: ReadonlyArray<{ code: st
 }
 
 function applySettings(settings: Settings): void {
+  applyProviderFields(settings);
+  applyShortcuts(settings);
+  if (!ui.settingsView.hidden) void refreshQuota();
+}
+
+function applyProviderFields(settings: Settings): void {
+  const provider = settings.provider;
+  formProvider = provider;
+  const profile = PROVIDERS[provider];
+  ui.providerSelect.value = provider;
+  ui.keyHint.textContent = profile.keyHint;
+  ui.modelLabel.textContent = profile.modelLabel;
+  ui.modelHint.textContent = profile.modelHint;
+  ui.customLabel.textContent = profile.customLabel;
+  ui.customHint.textContent = profile.customHint;
+  ui.customModel.placeholder = profile.customPlaceholder;
+  ui.customModel.setAttribute("aria-label", profile.customAria);
+  ui.modelSelect.setAttribute("aria-label", profile.modelLabel);
+  fillModelSelect(profile.modelTiers);
   ui.keyInput.value = settings.apiKey;
-  if (isCuratedModel(settings.model)) {
+  if (isProviderCurated(provider, settings.model)) {
     ui.modelSelect.value = settings.model;
     ui.customModel.value = "";
   } else {
-    ui.modelSelect.value = DEFAULT_MODEL;
+    ui.modelSelect.value = profile.defaultModel;
     ui.customModel.value = settings.model;
   }
-  applyShortcuts(settings);
+}
+
+function fillModelSelect(tiers: ReadonlyArray<{ label: string; models: readonly string[] }>): void {
+  ui.modelSelect.replaceChildren();
+  for (const tier of tiers) {
+    const group = document.createElement("optgroup");
+    group.label = tier.label;
+    for (const model of tier.models) {
+      const option = document.createElement("option");
+      option.value = model;
+      option.textContent = model;
+      group.append(option);
+    }
+    ui.modelSelect.append(group);
+  }
 }
 
 function applyShortcuts(settings: Settings): void {
@@ -224,6 +289,25 @@ function applyShortcuts(settings: Settings): void {
   applyGestureSwitch(settings.gestureEnabled);
   applyMode(settings.selectionMode);
   renderGlossary(settings.glossary);
+  applyOcrAvailability(settings);
+}
+
+function applyOcrAvailability(settings: Settings): void {
+  const enabled = providerSupportsVision(settings.provider);
+  ui.ocrButton.disabled = !enabled;
+  if (!enabled) {
+    ui.ocrButton.setAttribute("aria-label", "截图识译不可用");
+    ui.ocrNote.hidden = false;
+    ui.ocrNote.classList.add("is-block");
+    ui.ocrNote.textContent = NO_VISION_OCR_MESSAGE;
+    return;
+  }
+  ui.ocrButton.setAttribute("aria-label", "截图识译");
+  if (ui.ocrNote.classList.contains("is-block")) {
+    ui.ocrNote.classList.remove("is-block");
+    ui.ocrNote.hidden = true;
+    ui.ocrNote.textContent = "";
+  }
 }
 
 function applySelectionSwitch(on: boolean): void {
@@ -297,7 +381,74 @@ function persistMode(mode: SelectionMode): void {
 }
 
 function chosenModel(): ReturnType<typeof resolveModelChoice> {
-  return resolveModelChoice(ui.modelSelect.value, ui.customModel.value);
+  return resolveModelChoice(ui.modelSelect.value, ui.customModel.value, formProvider);
+}
+
+async function switchProvider(next: ProviderId): Promise<void> {
+  const choice = chosenModel();
+  if (!choice.ok) {
+    ui.providerSelect.value = formProvider;
+    showError("连接失败", choice.message);
+    return;
+  }
+  const previous = formProvider;
+  try {
+    await enqueue(async () => {
+      const current = await readSettings();
+      const saved = activateProvider(
+        updateProviderSlot(current, previous, {
+          apiKey: ui.keyInput.value.trim(),
+          model: choice.model,
+        }),
+        next,
+      );
+      await writeSettings(saved);
+      applyProviderFields(saved);
+      applyOcrAvailability(saved);
+    });
+    clearBanners();
+    void refreshQuota();
+  } catch {
+    ui.providerSelect.value = formProvider;
+    showError("连接失败", "厂商切换没有写入本机。请重试。");
+  }
+}
+
+function renderQuota(view: QuotaView): void {
+  ui.quota.classList.toggle("ok", view.tone === "balance");
+  ui.quotaMain.textContent = view.main;
+  ui.quotaSub.textContent = view.sub;
+  ui.quotaBadge.textContent = view.badge;
+  ui.quota.setAttribute("aria-label", view.label);
+}
+
+async function refreshQuota(): Promise<void> {
+  if (ui.settingsView.hidden) return;
+  const provider = formProvider;
+  const apiKey = ui.keyInput.value.trim();
+  const token = ++quotaToken;
+  const profile = PROVIDERS[provider];
+  if (profile.balance && apiKey) {
+    renderQuota({
+      tone: "estimate",
+      badge: "余额",
+      label: "账户余额",
+      main: "正在查询账户余额…",
+      sub: profile.balance.pendingNote,
+    });
+  }
+  try {
+    const response = (await chrome.runtime.sendMessage({
+      type: "quota-status",
+      provider,
+      apiKey,
+    })) as { ok?: boolean; view?: QuotaView } | undefined;
+    if (token !== quotaToken) return;
+    if (response?.view) renderQuota(response.view);
+  } catch {
+    if (token !== quotaToken) return;
+    renderQuota(estimateView(provider, emptyUsage()));
+  }
 }
 
 function renderGlossary(entries: GlossaryEntry[]): void {
@@ -333,10 +484,8 @@ async function saveForm(): Promise<void> {
     await enqueue(async () => {
       const current = await readSettings();
       const targetLang = isTargetLang(ui.targetSelect.value) ? ui.targetSelect.value : current.targetLang;
-      await writeSettings({
+      const next = updateProviderSlot({
         ...current,
-        apiKey: ui.keyInput.value.trim(),
-        model: choice.model,
         sourceLang: ui.sourceSelect.value,
         targetLang,
         selectionEnabled: current.selectionEnabled,
@@ -344,9 +493,15 @@ async function saveForm(): Promise<void> {
         forceSelectEnabled: current.forceSelectEnabled,
         gestureEnabled: ui.gestureToggle.getAttribute("aria-checked") === "true",
         glossary: current.glossary,
+      }, formProvider, {
+        apiKey: ui.keyInput.value.trim(),
+        model: choice.model,
       });
+      await writeSettings(next);
+      applyProviderFields(next);
     });
-    showOk("已保存", "Key 与设置已留在本机。");
+    showOk("已保存", "Key 与设置已留在本机。五家 Key 分别保存。");
+    void refreshQuota();
   } catch {
     showError("连接失败", "设置没有写入本机。请重试。");
   } finally {
@@ -373,8 +528,12 @@ async function testConnection(): Promise<void> {
       type: "test-connection",
       apiKey,
       model: choice.model,
+      provider: formProvider,
     })) as { ok?: boolean; title?: string; message?: string } | undefined;
-    if (response?.ok) showOk("连接成功", "千问已响应。若刚改过 Key 或模型，请再点保存。");
+    if (response?.ok) {
+      showOk("连接成功", `${PROVIDERS[formProvider].label}已响应。若刚改过 Key 或模型，请再点保存。`);
+      void refreshQuota();
+    }
     else showError(response?.title || "连接失败", response?.message || "API Key 无效或网络不可达。请检查后重试——不会假翻。");
   } catch {
     showError("连接失败", "API Key 无效或网络不可达。请检查后重试——不会假翻。");
@@ -517,7 +676,11 @@ async function refreshStatus(): Promise<void> {
 }
 
 async function startCropFromPopup(): Promise<void> {
+  const latest = await readSettings().catch(() => null);
+  if (latest) applyOcrAvailability(latest);
+  if (ui.ocrButton.disabled) return;
   ui.ocrNote.hidden = true;
+  ui.ocrNote.classList.remove("is-block");
   const tab = await activeWebTab();
   if (!tab) {
     ui.ocrNote.hidden = false;

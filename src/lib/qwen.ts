@@ -1,6 +1,7 @@
-import { QWEN_CHAT_COMPLETIONS_URL } from "./endpoint.ts";
+import { PROVIDERS, type ProviderId } from "./providers.ts";
+import { rememberCall } from "./quota.ts";
 import { TranslateError, emptyCompletionError, httpFailure, networkFailure, sanitizeDetail } from "./errors.ts";
-import { readSseStream } from "./sse.ts";
+import { readSseStream, readTokenUsage, type TokenUsage } from "./sse.ts";
 
 export interface ChatBodyOptions {
   model: string;
@@ -8,9 +9,13 @@ export interface ChatBodyOptions {
   user: string;
   stream: boolean;
   maxTokens?: number;
+  /** 缺省千问，保持旧调用。只有千问会带 enable_thinking。 */
+  provider?: ProviderId;
 }
 
 export function buildChatBody(opts: ChatBodyOptions): Record<string, unknown> {
+  const provider = opts.provider ?? "qwen";
+  const profile = PROVIDERS[provider];
   const messages: Array<{ role: string; content: string }> = [];
   if (opts.system) messages.push({ role: "system", content: opts.system });
   messages.push({ role: "user", content: opts.user });
@@ -18,10 +23,12 @@ export function buildChatBody(opts: ChatBodyOptions): Record<string, unknown> {
     model: opts.model,
     messages,
     stream: opts.stream,
-    temperature: 0.2,
-    enable_thinking: false,
   };
-  if (opts.maxTokens) body.max_tokens = opts.maxTokens;
+  // deepseek-reasoner 不接受 temperature，带上会 400。
+  if (opts.model !== "deepseek-reasoner") body.temperature = 0.2;
+  if (profile.disableThinking) body.enable_thinking = false;
+  if (opts.stream && profile.includeStreamUsage) body.stream_options = { include_usage: true };
+  if (opts.maxTokens && opts.model !== "deepseek-reasoner") body.max_tokens = opts.maxTokens;
   return body;
 }
 
@@ -30,11 +37,13 @@ export interface VisionBodyOptions {
   prompt: string;
   imageDataUrl: string;
   maxTokens?: number;
+  provider?: ProviderId;
 }
 
 /** 识图走同一套兼容模式，但 content 是图文数组，并且不流式。 */
 export function buildVisionBody(opts: VisionBodyOptions): Record<string, unknown> {
-  return {
+  const provider = opts.provider ?? "qwen";
+  const body: Record<string, unknown> = {
     model: opts.model,
     messages: [
       {
@@ -47,9 +56,10 @@ export function buildVisionBody(opts: VisionBodyOptions): Record<string, unknown
     ],
     stream: false,
     temperature: 0.1,
-    enable_thinking: false,
     max_tokens: opts.maxTokens ?? 2048,
   };
+  if (PROVIDERS[provider].disableThinking) body.enable_thinking = false;
+  return body;
 }
 
 export function completionText(json: unknown): string {
@@ -83,18 +93,20 @@ function requestSignal(userSignal: AbortSignal, timeoutMs: number): AbortSignal 
 export async function streamChat(opts: {
   apiKey: string;
   model: string;
+  provider?: ProviderId;
   system: string;
   user: string;
   signal: AbortSignal;
   onDelta: (chunk: string) => void;
   fetchImpl?: typeof fetch;
   where?: "settings" | "float";
-}): Promise<void> {
+}): Promise<{ usage: TokenUsage | null }> {
   const where = opts.where ?? "float";
+  const provider = opts.provider ?? "qwen";
   const fetchImpl = opts.fetchImpl ?? fetch;
   let response: Response;
   try {
-    response = await fetchImpl(QWEN_CHAT_COMPLETIONS_URL, {
+    response = await fetchImpl(PROVIDERS[provider].chatCompletionsUrl, {
       method: "POST",
       signal: requestSignal(opts.signal, 45_000),
       headers: {
@@ -104,6 +116,7 @@ export async function streamChat(opts: {
       body: JSON.stringify(
         buildChatBody({
           model: opts.model,
+          provider,
           system: opts.system,
           user: opts.user,
           stream: true,
@@ -119,8 +132,10 @@ export async function streamChat(opts: {
   }
   if (!response.body) throw emptyCompletionError(where);
   try {
-    const { received } = await readSseStream(response.body, opts.onDelta);
+    const { received, usage } = await readSseStream(response.body, opts.onDelta);
     if (!received) throw emptyCompletionError(where);
+    await rememberCall(provider, opts.model, usage);
+    return { usage };
   } catch (error) {
     if (error instanceof TranslateError) throw error;
     if (isAbort(error)) throw mapFetchError(error, opts.signal, where);
@@ -135,14 +150,16 @@ export async function streamChat(opts: {
 export async function testConnection(opts: {
   apiKey: string;
   model: string;
+  provider?: ProviderId;
   signal?: AbortSignal;
   fetchImpl?: typeof fetch;
 }): Promise<void> {
+  const provider = opts.provider ?? "qwen";
   const fetchImpl = opts.fetchImpl ?? fetch;
   const signal = opts.signal ?? new AbortController().signal;
   let response: Response;
   try {
-    response = await fetchImpl(QWEN_CHAT_COMPLETIONS_URL, {
+    response = await fetchImpl(PROVIDERS[provider].chatCompletionsUrl, {
       method: "POST",
       signal: requestSignal(signal, 20_000),
       headers: {
@@ -152,6 +169,7 @@ export async function testConnection(opts: {
       body: JSON.stringify(
         buildChatBody({
           model: opts.model,
+          provider,
           user: "请只回复 OK",
           stream: false,
           maxTokens: 8,
@@ -170,20 +188,23 @@ export async function testConnection(opts: {
     throw emptyCompletionError("settings");
   }
   if (!isSuccessfulCompletion(json)) throw emptyCompletionError("settings");
+  await rememberCall(provider, opts.model, readTokenUsage(json));
 }
 
 export async function completeVision(opts: {
   apiKey: string;
   model: string;
+  provider?: ProviderId;
   prompt: string;
   imageDataUrl: string;
   signal: AbortSignal;
   fetchImpl?: typeof fetch;
 }): Promise<string> {
+  const provider = opts.provider ?? "qwen";
   const fetchImpl = opts.fetchImpl ?? fetch;
   let response: Response;
   try {
-    response = await fetchImpl(QWEN_CHAT_COMPLETIONS_URL, {
+    response = await fetchImpl(PROVIDERS[provider].chatCompletionsUrl, {
       method: "POST",
       signal: requestSignal(opts.signal, 45_000),
       headers: {
@@ -193,6 +214,7 @@ export async function completeVision(opts: {
       body: JSON.stringify(
         buildVisionBody({
           model: opts.model,
+          provider,
           prompt: opts.prompt,
           imageDataUrl: opts.imageDataUrl,
         }),
@@ -212,6 +234,7 @@ export async function completeVision(opts: {
   if (!isSuccessfulCompletion(json)) throw emptyCompletionError("ocr");
   const content = completionText(json).trim();
   if (!content) throw emptyCompletionError("ocr");
+  await rememberCall(provider, opts.model, readTokenUsage(json));
   return content;
 }
 

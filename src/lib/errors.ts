@@ -40,6 +40,14 @@ export function httpFailure(where: TranslateSurface, status: number, body: strin
     }
     return new TranslateError("auth", titleFor(where), bodyFor(where), true);
   }
+  if (status === 402) {
+    return new TranslateError(
+      "quota",
+      titleFor(where),
+      detail ? `${detail}——不会假翻。` : "额度不足或账户欠费。请检查该厂商账单——不会假翻。",
+      true,
+    );
+  }
   if (status === 429) {
     return new TranslateError(
       "quota",
@@ -52,7 +60,7 @@ export function httpFailure(where: TranslateSurface, status: number, body: strin
     return new TranslateError(
       "network",
       titleFor(where),
-      "通义千问服务暂时不可用。请稍后再试——不会假翻。",
+      "模型服务暂时不可用。请稍后再试——不会假翻。",
       true,
     );
   }
@@ -74,10 +82,10 @@ export function networkFailure(where: TranslateSurface, timedOut = false): Trans
 export function emptyCompletionError(where: TranslateSurface): TranslateError {
   const message =
     where === "settings"
-      ? "千问没有返回内容。不会假翻。"
+      ? "模型没有返回内容。不会假翻。"
       : where === "ocr"
         ? "没有识别出文字。不会假翻。"
-        : "千问没有返回译文。不会假翻。";
+        : "模型没有返回译文。不会假翻。";
   return new TranslateError("empty", titleFor(where), message, where !== "float");
 }
 
