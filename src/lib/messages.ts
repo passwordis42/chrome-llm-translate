@@ -16,6 +16,13 @@ export interface TestConnectionMessage {
   type: "test-connection";
   apiKey: string;
   model: string;
+  provider?: string;
+}
+
+export interface QuotaStatusMessage {
+  type: "quota-status";
+  provider?: string;
+  apiKey?: string;
 }
 
 export interface GoogleTranslateMessage {
@@ -60,6 +67,7 @@ export interface OcrTranslateMessage {
 
 export type ToWorkerMessage =
   | TestConnectionMessage
+  | QuotaStatusMessage
   | GoogleTranslateMessage
   | OpenSettingsMessage
   | CaptureVisibleMessage

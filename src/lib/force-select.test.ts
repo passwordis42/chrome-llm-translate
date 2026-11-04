@@ -204,7 +204,7 @@ describe("force select settings ui", () => {
       version: string;
       content_scripts: Array<{ run_at?: string }>;
     };
-    assert.equal(manifest.version, "0.1.8");
+    assert.equal(manifest.version, "0.1.9");
     assert.equal(manifest.content_scripts[0]?.run_at, "document_start");
 
     const content = readFileSync(new URL("../content/index.ts", import.meta.url), "utf8");

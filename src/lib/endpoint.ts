@@ -1,5 +1,6 @@
 /**
  * 通义千问 · DashScope OpenAI 兼容模式（中国站）。
+ * 其他四家的固定端点在 providers.ts，本版不能在设置里改 Base URL。
  *
  * POST {QWEN_CHAT_COMPLETIONS_URL}
  * Authorization: Bearer <用户自己的 API Key>
