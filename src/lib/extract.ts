@@ -12,20 +12,25 @@ export interface ExtractResult {
 }
 
 const BLOCK_SELECTOR = "h1,h2,h3,h4,h5,h6,p,li,blockquote,figcaption,dd";
-const SKIP_CLOSEST = "nav,footer,aside,[role='navigation'],[role='contentinfo'],#yifan-float,#yifan-dialog,#yifan-inline-bar,[data-yifan-ignore],[data-yifan-replaced]";
+/** 卡片标题经常只是 a/div/span，不在上面的结构标签里。 */
+const LOOSE_SELECTOR = "a,span,div,button,label,time,cite,strong,em,b,i,small,mark,abbr,u,s,q,dt,td,th,summary";
+const MEDIA_SELECTOR = "img,svg,video,picture,canvas,iframe,object";
+const SKIP_CLOSEST = "nav,footer,aside,[role='navigation'],[role='contentinfo'],pre,code,kbd,samp,script,style,textarea,noscript,svg,#yifan-float,#yifan-dialog,#yifan-inline-bar,[data-yifan-ignore],[data-yifan-replaced]";
+const INLINE_TAGS = new Set([
+  "A", "SPAN", "STRONG", "EM", "B", "I", "CITE", "TIME", "LABEL", "SMALL", "MARK", "ABBR",
+  "SUB", "SUP", "U", "S", "FONT", "BR", "WBR", "Q", "CODE", "KBD", "SAMP", "VAR", "BDI", "BDO",
+]);
 export const PAGE_BLOCK_LIMIT = 60;
 const MAX_BLOCK_CHARS = 1800;
 
 export function extractBlocks(doc: Document, limit = PAGE_BLOCK_LIMIT): ExtractResult {
   const root = pickRoot(doc);
-  const nodes = [...root.querySelectorAll(BLOCK_SELECTOR)];
+  const nodes = collectNodes(root);
   const blocks: PageBlock[] = [];
   let title = "";
   let truncated = false;
 
   for (const node of nodes) {
-    if (node.closest(SKIP_CLOSEST)) continue;
-    if (node.querySelector(BLOCK_SELECTOR)) continue;
     if (isHiddenDeep(node)) continue;
     const parts = splitLong(elementText(node), MAX_BLOCK_CHARS);
     for (const part of parts) {
@@ -43,6 +48,82 @@ export function extractBlocks(doc: Document, limit = PAGE_BLOCK_LIMIT): ExtractR
 
   if (!title) title = fallbackTitle(doc);
   return { title, blocks, truncated };
+}
+
+function collectNodes(root: Element): Element[] {
+  const wanted = new Set<Element>();
+  for (const node of root.querySelectorAll(BLOCK_SELECTOR)) {
+    if (node.closest(SKIP_CLOSEST)) continue;
+    if (node.querySelector(BLOCK_SELECTOR)) continue;
+    wanted.add(node);
+  }
+  for (const node of looseHosts(root)) wanted.add(node);
+  const ordered: Element[] = [];
+  const walk = (node: Element): void => {
+    if (wanted.has(node)) ordered.push(node);
+    for (const child of node.children) walk(child);
+  };
+  walk(root);
+  return ordered;
+}
+
+/**
+ * 不在 p/h/li 里的一整句：首页卡片标题多半是 a，偶尔是只含文本的 div。
+ * 只取这一句本身，不把外层卡片（里面还有导语、图片）整段换掉。
+ * 段内的行内链接仍跟着所在的 p/li，不单独拆出来。
+ */
+function looseHosts(root: Element): Element[] {
+  const hosts = [...root.querySelectorAll(LOOSE_SELECTOR)].filter(isLooseHost);
+  const hostSet = new Set(hosts);
+  return hosts.filter((node) => {
+    let parent = node.parentElement;
+    while (parent) {
+      if (hostSet.has(parent)) return false;
+      parent = parent.parentElement;
+    }
+    return true;
+  });
+}
+
+function isLooseHost(node: Element): boolean {
+  if (!isPhraseContainer(node)) return false;
+  if (isInline(node)) {
+    const parent = node.parentElement;
+    if (parent && isInline(parent) && isPhraseContainer(parent)) return false;
+    return true;
+  }
+  return hasDirectLetterText(node);
+}
+
+function isPhraseContainer(node: Element): boolean {
+  if (node.closest(SKIP_CLOSEST)) return false;
+  if (node.closest(BLOCK_SELECTOR)) return false;
+  if (node.querySelector(BLOCK_SELECTOR)) return false;
+  if (node.querySelector(MEDIA_SELECTOR)) return false;
+  if (!/\p{L}/u.test(node.textContent ?? "")) return false;
+  return !hasNonInlineDescendant(node);
+}
+
+function hasNonInlineDescendant(node: Element): boolean {
+  const stack = [...node.children];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current) continue;
+    if (!isInline(current)) return true;
+    for (const child of current.children) stack.push(child);
+  }
+  return false;
+}
+
+function hasDirectLetterText(node: Element): boolean {
+  for (const child of node.childNodes) {
+    if (child.nodeType === 3 && /\p{L}/u.test(child.textContent ?? "")) return true;
+  }
+  return false;
+}
+
+function isInline(node: Element): boolean {
+  return INLINE_TAGS.has(node.tagName);
 }
 
 function pickRoot(doc: Document): Element {

@@ -10,7 +10,7 @@ function check(condition, message) {
 
 check(manifest.manifest_version === 3, "manifest_version");
 check(manifest.name === "一翻", "name");
-check(manifest.version === "0.1.4", "version");
+check(manifest.version === "0.1.5", "version");
 check(manifest.content_scripts?.[0]?.run_at === "document_start", "content script starts early enough to beat select bans");
 check(manifest.background?.service_worker === "background.js", "service worker");
 check(manifest.content_scripts?.[0]?.js?.[0] === "content.js", "content script");
