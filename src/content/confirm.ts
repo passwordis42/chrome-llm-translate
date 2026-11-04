@@ -1,4 +1,3 @@
-import { CONFIRM_DETAIL, CONFIRM_EMPHASIS, CONFIRM_LEAD } from "../lib/inpage.ts";
 import { el, lockPageScroll, markImg, mount, unlockPageScroll } from "./dom.ts";
 
 let closeCurrent: ((value: boolean) => void) | null = null;
@@ -11,7 +10,8 @@ export function dismissConfirm(): void {
   closeCurrent?.(false);
 }
 
-export function showConfirm(mode: "ai" | "google"): Promise<boolean> {
+export function showConfirm(mode: "google"): Promise<boolean> {
+  if (mode !== "google") return Promise.resolve(false);
   dismissConfirm();
   return new Promise((resolve) => {
     const { host, root } = mount("yifan-dialog");
@@ -35,38 +35,26 @@ export function showConfirm(mode: "ai" | "google"): Promise<boolean> {
 
     const head = el("div", "hd");
     const titles = el("div");
-    const title = el("h1", undefined, mode === "ai" ? "一翻 · 整页 AI" : "一翻 · 整页谷歌");
+    const title = el("h1", undefined, "一翻 · 整页谷歌");
     title.id = "yifan-confirm-title";
-    const sub = el(
-      "div",
-      "sub",
-      mode === "ai" ? "需确认后才会开始翻译" : "用于不重要的整页 · 须确认",
-    );
+    const sub = el("div", "sub", "用于不重要的整页 · 须确认");
     titles.append(title, sub);
     head.append(markImg(32), titles);
 
     const body = el("div", "body");
     const message = el("p", "msg");
-    if (mode === "ai") {
-      message.append(CONFIRM_LEAD, el("strong", undefined, CONFIRM_EMPHASIS), "？");
-    } else {
-      message.append("用浏览器自带", el("strong", undefined, "谷歌翻译"), "整页？");
-    }
+    message.append("用浏览器自带", el("strong", undefined, "谷歌翻译"), "整页？");
     const detail = el("div", "detail");
-    if (mode === "ai") {
-      detail.textContent = CONFIRM_DETAIL;
-    } else {
-      detail.append(
-        "只尝试唤起浏览器自带的原页翻译，留在当前页。",
-        el("em", undefined, "不跳转"),
-        "到 translate.google.com，也不做 LLM 双语。取消则无副作用。",
-      );
-    }
+    detail.append(
+      "只尝试唤起浏览器自带的原页翻译，留在当前页。",
+      el("em", undefined, "不跳转"),
+      "到 translate.google.com，也不做 LLM 双语。取消则无副作用。",
+    );
 
     const actionRow = el("div", "actions");
     const cancel = el("button", "btn", "取消");
     cancel.type = "button";
-    const ok = el("button", mode === "google" ? "btn primary google" : "btn primary", mode === "ai" ? "确认翻译" : "唤起页面翻译");
+    const ok = el("button", "btn primary google", "唤起页面翻译");
     ok.type = "button";
     cancel.addEventListener("click", () => finish(false));
     ok.addEventListener("click", () => finish(true));

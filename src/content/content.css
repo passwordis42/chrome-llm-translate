@@ -145,6 +145,8 @@ img { display: block; }
 .btn:hover { background: #fbfaf6; }
 .btn.primary { background: #2f6fed; color: #fff; border-color: #2f6fed; }
 .btn.primary:hover { filter: brightness(1.05); }
+.btn.stop { background: #b42318; color: #fff; border-color: #b42318; }
+.btn.stop:hover { filter: brightness(1.05); }
 .btn.primary.google { background: #1a73e8; border-color: #1a73e8; }
 .btn:disabled { opacity: 0.45; cursor: default; filter: none; }
 .err[hidden], .dst[hidden] { display: none; }
@@ -281,12 +283,21 @@ img { display: block; }
 .chip {
   display: inline-flex;
   align-items: center;
+  gap: 6px;
   font-size: 12px;
   font-weight: 700;
   color: #2f6fed;
   background: #eaf1ff;
   border-radius: 999px;
   padding: 6px 10px;
+}
+.chip.live::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #2f6fed;
+  box-shadow: 0 0 0 3px rgba(47, 111, 237, 0.25);
 }
 @media (max-width: 720px) {
   .toolbar { align-items: flex-start; flex-direction: column; }

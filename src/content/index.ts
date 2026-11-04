@@ -1,8 +1,9 @@
 import { dismissConfirm, isConfirmOpen, showConfirm, showNotice } from "./confirm.ts";
 import { isYifanEvent } from "./dom.ts";
 import { closeSelectionFloat, currentFloatText, initFloat, isFloatOpen, openSelectionFloat, repositionFloat } from "./float.ts";
-import { clearInlinePage, initPage, isInlinePageOpen, openInlinePage } from "./pageview.ts";
+import { clearInlinePage, initPage, isInlinePageOpen, pageStatus, startInlinePage, stopInlinePage } from "./pageview.ts";
 import { closeSelectConfirm, currentSelectConfirmText, isSelectConfirmOpen, openSelectConfirm, repositionSelectConfirm } from "./select-confirm.ts";
+import type { PageControlStatus } from "../lib/inpage.ts";
 import type { ToPageMessage } from "../lib/messages.ts";
 import { cleanSelection, selectionOffer } from "../lib/selection.ts";
 import { createForceSelect } from "../lib/force-select.ts";
@@ -64,7 +65,7 @@ function boot(): void {
   chrome.runtime.onMessage.addListener((message: ToPageMessage, _sender, sendResponse) => {
     void _sender;
     void handlePageMessage(message).then(
-      () => sendResponse({ ok: true }),
+      (result) => sendResponse(result ?? { ok: true }),
       () => sendResponse({ ok: false }),
     );
     return true;
@@ -136,7 +137,7 @@ function boot(): void {
     openSelectionFloat(text);
   }
 
-  async function handlePageMessage(message: ToPageMessage): Promise<void> {
+  async function handlePageMessage(message: ToPageMessage): Promise<PageControlStatus | { ok: boolean } | void> {
     if (!message || typeof message !== "object") return;
     if (message.type === "translate-selection") {
       const live = cleanSelection(window.getSelection()?.toString() ?? "");
@@ -147,16 +148,23 @@ function boot(): void {
       openSelectionFloat(text);
       return;
     }
-    if (message.type === "show-page-ai") {
+    if (message.type === "page-ai-status") return pageStatus();
+    if (message.type === "page-ai-stop") {
+      stopInlinePage();
+      return pageStatus();
+    }
+    if (message.type === "page-ai-clear") {
+      clearInlinePage();
+      return pageStatus();
+    }
+    if (message.type === "show-page-ai" || message.type === "page-ai-start") {
       closeSelectionFloat();
       closeSelectConfirm();
-      const confirmed = await showConfirm("ai");
-      if (!confirmed) return;
-      const opened = await openInlinePage();
+      const opened = await startInlinePage();
       if (opened === "empty") {
         await showNotice("一翻 · 整页 AI", "这一页没有找到可翻译的段落。没有改动原文。");
       }
-      return;
+      return pageStatus();
     }
     if (message.type === "show-page-google") {
       closeSelectionFloat();

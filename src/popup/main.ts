@@ -1,4 +1,5 @@
 import { SOURCE_LANGUAGES, TARGET_LANGUAGES, isTargetLang } from "../lib/languages.ts";
+import type { PageControlStatus, PageRunState } from "../lib/inpage.ts";
 import type { GlossaryEntry } from "../lib/glossary.ts";
 import {
   DEFAULT_MODEL,
@@ -10,8 +11,18 @@ import {
   type Settings,
 } from "../lib/settings.ts";
 
+const homeView = document.querySelector<HTMLElement>("#home-view");
 const settingsView = document.querySelector<HTMLElement>("#settings-view");
 const glossaryView = document.querySelector<HTMLElement>("#glossary-view");
+const pageStatus = document.querySelector<HTMLElement>("#page-status");
+const statusLabel = document.querySelector<HTMLElement>("#status-label");
+const statusHint = document.querySelector<HTMLElement>("#status-hint");
+const progress = document.querySelector<HTMLElement>("#progress");
+const progressBar = document.querySelector<HTMLElement>("#progress-bar");
+const startButton = document.querySelector<HTMLButtonElement>("#start-page");
+const stopButton = document.querySelector<HTMLButtonElement>("#stop-page");
+const clearButton = document.querySelector<HTMLButtonElement>("#clear-page");
+const backHome = document.querySelector<HTMLButtonElement>("#back-home");
 const keyInput = document.querySelector<HTMLInputElement>("#api-key");
 const modelSelect = document.querySelector<HTMLSelectElement>("#model");
 const customModel = document.querySelector<HTMLInputElement>("#custom-model");
@@ -35,7 +46,9 @@ const termTarget = document.querySelector<HTMLInputElement>("#term-target");
 const glossaryError = document.querySelector<HTMLElement>("#glossary-error");
 
 if (
-  !settingsView || !glossaryView || !keyInput || !modelSelect || !customModel || !sourceSelect || !targetSelect ||
+  !homeView || !settingsView || !glossaryView || !pageStatus || !statusLabel || !statusHint || !progress || !progressBar ||
+  !startButton || !stopButton || !clearButton || !backHome ||
+  !keyInput || !modelSelect || !customModel || !sourceSelect || !targetSelect ||
   !toggle || !forceSelectToggle || !modeConfirm || !modeImmediate || !err || !errTitle || !errBody || !ok || !okTitle || !okBody ||
   !testButton || !saveButton || !rows || !termSource || !termTarget || !glossaryError
 ) {
@@ -43,7 +56,9 @@ if (
 }
 
 const ui = {
-  settingsView, glossaryView, keyInput, modelSelect, customModel, sourceSelect, targetSelect, toggle,
+  homeView, settingsView, glossaryView, pageStatus, statusLabel, statusHint, progress, progressBar,
+  startButton, stopButton, clearButton, backHome,
+  keyInput, modelSelect, customModel, sourceSelect, targetSelect, toggle,
   forceSelectToggle, modeConfirm, modeImmediate, err, errTitle, errBody, ok, okTitle, okBody, testButton, saveButton,
   rows, termSource, termTarget, glossaryError,
 };
@@ -53,8 +68,24 @@ fillSelect(ui.targetSelect, TARGET_LANGUAGES);
 
 if (window.innerWidth > 520) document.body.classList.add("is-tab");
 chrome.tabs.getCurrent((tab) => {
-  document.body.classList.toggle("is-tab", Boolean(tab));
+  const inTab = Boolean(tab);
+  document.body.classList.toggle("is-tab", inTab);
+  if (inTab) showSettings();
+  else {
+    showHome();
+    startPoll();
+  }
 });
+
+document.querySelector("#open-settings")?.addEventListener("click", () => showSettings());
+document.querySelector("#settings-link")?.addEventListener("click", () => showSettings());
+ui.backHome.addEventListener("click", () => {
+  showHome();
+  startPoll();
+});
+ui.startButton.addEventListener("click", () => void runCommand("page-ai-start"));
+ui.stopButton.addEventListener("click", () => void runCommand("page-ai-stop"));
+ui.clearButton.addEventListener("click", () => void runCommand("page-ai-clear"));
 
 let queue = Promise.resolve();
 
@@ -126,6 +157,29 @@ ui.rows.addEventListener("click", (event) => {
     renderGlossary((await readSettings()).glossary);
   });
 });
+
+function showSettings(): void {
+  ui.homeView.hidden = true;
+  ui.glossaryView.hidden = true;
+  ui.settingsView.hidden = false;
+}
+
+function showHome(): void {
+  ui.settingsView.hidden = true;
+  ui.glossaryView.hidden = true;
+  ui.homeView.hidden = false;
+  void refreshStatus();
+}
+
+let polling = false;
+
+function startPoll(): void {
+  if (polling) return;
+  polling = true;
+  window.setInterval(() => {
+    if (!ui.homeView.hidden) void refreshStatus();
+  }, 400);
+}
 
 function fillSelect(select: HTMLSelectElement, options: ReadonlyArray<{ code: string; label: string }>): void {
   for (const option of options) {
@@ -305,4 +359,120 @@ function showOk(title: string, message: string): void {
 function clearBanners(): void {
   ui.err.hidden = true;
   ui.ok.hidden = true;
+}
+
+type PageCommand = "page-ai-start" | "page-ai-stop" | "page-ai-clear" | "page-ai-status";
+
+const PAGE_STATES = new Set<PageRunState>(["idle", "running", "stopped", "done"]);
+
+function unavailable(hint: string): PageControlStatus {
+  return {
+    ok: true,
+    state: "idle",
+    label: "当前页 · 不可用",
+    hint,
+    canStart: false,
+    canStop: false,
+    canClear: false,
+    startLabel: "开始",
+    progress: null,
+  };
+}
+
+function isPageStatus(value: unknown): value is PageControlStatus {
+  if (!value || typeof value !== "object") return false;
+  const status = value as Partial<PageControlStatus>;
+  return status.ok === true
+    && typeof status.state === "string"
+    && PAGE_STATES.has(status.state)
+    && typeof status.label === "string"
+    && typeof status.hint === "string"
+    && typeof status.canStart === "boolean"
+    && typeof status.canStop === "boolean"
+    && typeof status.canClear === "boolean"
+    && (status.startLabel === "开始" || status.startLabel === "继续");
+}
+
+function isWebTab(tab: chrome.tabs.Tab | undefined): tab is chrome.tabs.Tab & { id: number } {
+  if (!tab || tab.id == null || !tab.url) return false;
+  return tab.url.startsWith("http://") || tab.url.startsWith("https://");
+}
+
+function currentTab(): Promise<chrome.tabs.Tab | undefined> {
+  return new Promise((resolve) => {
+    chrome.tabs.getCurrent((tab) => resolve(tab));
+  });
+}
+
+async function activeWebTab(): Promise<(chrome.tabs.Tab & { id: number }) | null> {
+  const here = await currentTab();
+  const [current] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (isWebTab(current) && current.id !== here?.id) return current;
+  const [focused] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  if (isWebTab(focused) && focused.id !== here?.id) return focused;
+  const tabs = await chrome.tabs.query({ active: true });
+  const found = tabs.find((tab) => isWebTab(tab) && tab.id !== here?.id);
+  return found && isWebTab(found) ? found : null;
+}
+
+async function deliver(tabId: number, message: { type: PageCommand }): Promise<unknown> {
+  try {
+    return await chrome.tabs.sendMessage(tabId, message);
+  } catch {
+    await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] });
+    return await chrome.tabs.sendMessage(tabId, message);
+  }
+}
+
+let refreshing = false;
+
+async function refreshStatus(): Promise<void> {
+  if (refreshing || ui.homeView.hidden) return;
+  refreshing = true;
+  try {
+    await sendPage("page-ai-status");
+  } finally {
+    refreshing = false;
+  }
+}
+
+async function runCommand(type: Exclude<PageCommand, "page-ai-status">): Promise<void> {
+  ui.startButton.disabled = true;
+  ui.stopButton.disabled = true;
+  ui.clearButton.disabled = true;
+  await sendPage(type);
+}
+
+async function sendPage(type: PageCommand): Promise<void> {
+  const tab = await activeWebTab();
+  if (!tab) {
+    renderStatus(unavailable("当前没有可翻译的网页。"));
+    return;
+  }
+  try {
+    const response = await deliver(tab.id, { type });
+    if (isPageStatus(response)) renderStatus(response);
+    else renderStatus(unavailable("这个页面没有回应。打开普通网页后再试。"));
+  } catch {
+    renderStatus(unavailable("这个页面不能整页翻译。打开普通网页后再试。"));
+  }
+}
+
+function renderStatus(status: PageControlStatus): void {
+  ui.pageStatus.dataset.state = status.state;
+  ui.statusLabel.textContent = status.label;
+  ui.statusHint.textContent = status.hint;
+  ui.startButton.textContent = status.startLabel;
+  ui.startButton.disabled = !status.canStart;
+  ui.stopButton.disabled = !status.canStop;
+  ui.stopButton.classList.toggle("stop", status.canStop);
+  ui.clearButton.disabled = !status.canClear;
+  const showProgress = status.state === "running";
+  ui.progress.hidden = !showProgress;
+  if (showProgress) {
+    const ratio = status.progress ?? 0;
+    const pct = Math.max(8, Math.round(ratio * 100));
+    ui.progressBar.style.width = `${pct}%`;
+    ui.progress.setAttribute("aria-valuenow", String(Math.round(ratio * 100)));
+  }
 }

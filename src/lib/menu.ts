@@ -5,7 +5,7 @@ export interface MenuItem {
   contexts: Array<"page" | "selection" | "action">;
 }
 
-/** 与 UI 稿右键菜单文案一致。整页两项带省略号，点下去仍要确认。 */
+/** 与 UI 稿右键菜单文案一致。整页 AI 直接开始；整页谷歌仍要确认。 */
 export function menuItems(): MenuItem[] {
   return [
     { id: "translate-selection", title: "翻译选中内容", contexts: ["selection"] },

@@ -4,11 +4,16 @@ import {
   SCROLL_HINT,
   TOOLBAR_META,
   collectReplacedText,
+  derivePageStatus,
   ensureSnapshot,
   isInViewport,
   nextVisibleBatch,
+  releaseUnfinished,
   replaceInPlace,
   restoreSnapshots,
+  startKind,
+  toolbarChip,
+  type PageControlStatus,
   type TextSnapshot,
 } from "../lib/inpage.ts";
 import { pairLabel } from "../lib/languages.ts";
@@ -40,6 +45,9 @@ let partials = new Map<string, string>();
 let snapshots = new Map<Element, TextSnapshot>();
 let activePump: Promise<void> | null = null;
 let releasePump: (() => void) | null = null;
+let stopButton: HTMLButtonElement | null = null;
+let chipNode: HTMLElement | null = null;
+let pairText = "自动 → 中文";
 const anchorIds = new WeakMap<Element, string>();
 let anchorSeq = 0;
 let idSeq = 0;
@@ -50,6 +58,31 @@ export function initPage(next: PageDeps): void {
 
 export function isInlinePageOpen(): boolean {
   return barHost != null;
+}
+
+export function pageStatus(): PageControlStatus {
+  const open = barHost != null;
+  const pending = open && tracked.some((block) => !done.has(block.id));
+  return derivePageStatus({
+    open,
+    stopped,
+    pending,
+    doneCount: done.size,
+    totalCount: tracked.length,
+    error: lastError,
+  });
+}
+
+export function stopInlinePage(): void {
+  if (!barHost || stopped) return;
+  stopped = true;
+  lastError = "";
+  abort?.abort();
+  abort = null;
+  releaseUnfinished(queued, done);
+  const token = generation;
+  setStatus("", token, "idle");
+  setHint(tracked.some((block) => !done.has(block.id)), token);
 }
 
 export function clearInlinePage(): void {
@@ -72,22 +105,45 @@ export function clearInlinePage(): void {
   barHost = null;
   hintNode = null;
   statusNode = null;
+  stopButton = null;
+  chipNode = null;
 }
 
-export async function openInlinePage(): Promise<"empty" | "done"> {
+export async function startInlinePage(): Promise<"empty" | "started" | "busy"> {
+  const kind = startKind(pageStatus().state);
+  if (kind === "busy") return "busy";
+  if (kind === "resume") {
+    resumeInlinePage();
+    return "started";
+  }
   const previous = activePump;
   clearInlinePage();
   const token = generation;
   if (previous) await previous;
-  if (token !== generation || !deps) return "done";
+  if (token !== generation || !deps) return "started";
   syncFromDocument();
-  if (token !== generation) return "done";
+  if (token !== generation) return "started";
   if (tracked.length === 0) return "empty";
   abort = new AbortController();
+  stopped = false;
+  lastError = "";
   renderBar(tracked[0]?.text ?? "");
   bindViewport(token);
-  await pump(token);
-  return "done";
+  void pump(token);
+  return "started";
+}
+
+function resumeInlinePage(): void {
+  const token = generation;
+  stopped = false;
+  lastError = "";
+  abort?.abort();
+  abort = new AbortController();
+  releaseUnfinished(queued, done);
+  if (!onViewportChange) bindViewport(token);
+  setStatus("", token, "idle");
+  setHint(tracked.some((block) => !done.has(block.id)), token);
+  void pump(token);
 }
 
 function anchorKey(anchor: Element): string {
@@ -254,6 +310,8 @@ async function translateBatch(batch: readonly PageBlock[], token: number): Promi
       setStatus(lastError, token, "error");
       if (streamError.fatal !== false) {
         stopped = true;
+        releaseUnfinished(queued, done);
+        setHint(tracked.some((item) => !done.has(item.id)), token);
         return;
       }
     }
@@ -287,30 +345,42 @@ function renderBar(sample: string): void {
   left.append(markImg(28), titles);
 
   const right = el("div", "right");
-  const chip = el(
-    "span",
-    "chip",
-    settings ? pairLabel(settings.sourceLang, settings.targetLang, sample) : "自动 → 中文",
-  );
-  const copyAll = el("button", "btn primary", "复制全部译文");
+  pairText = settings ? pairLabel(settings.sourceLang, settings.targetLang, sample) : "自动 → 中文";
+  const chip = el("span", "chip", pairText);
+  chipNode = chip;
+  const stop = el("button", "btn stop", "停止");
+  stop.type = "button";
+  stop.addEventListener("click", () => stopInlinePage());
+  stopButton = stop;
+  const copyAll = el("button", "btn", "复制全部译文");
   copyAll.type = "button";
   copyAll.addEventListener("click", () => void onCopyAll(copyAll));
   const clear = el("button", "btn", "清除译文");
   clear.type = "button";
   clear.addEventListener("click", () => clearInlinePage());
-  right.append(chip, copyAll, clear);
+  right.append(chip, stop, copyAll, clear);
   toolbar.append(left, right);
 
   hintNode = el("p", "hint", SCROLL_HINT);
   statusNode = el("p", "status");
   statusNode.hidden = true;
   mounted.root.append(toolbar, hintNode, statusNode);
+  paintChrome(generation);
 }
 
 function setHint(pending: boolean, token: number): void {
   if (token !== generation || !hintNode?.isConnected) return;
-  hintNode.hidden = !pending;
-  hintNode.textContent = SCROLL_HINT;
+  const status = pageStatus();
+  if (status.state === "running" && pending) {
+    hintNode.hidden = false;
+    hintNode.textContent = SCROLL_HINT;
+  } else if (status.state === "stopped" || status.state === "done") {
+    hintNode.hidden = false;
+    hintNode.textContent = status.hint;
+  } else {
+    hintNode.hidden = true;
+  }
+  paintChrome(token);
 }
 
 function setStatus(text: string, token: number, state: "run" | "idle" | "error"): void {
@@ -318,6 +388,18 @@ function setStatus(text: string, token: number, state: "run" | "idle" | "error")
   statusNode.hidden = text.length === 0;
   statusNode.dataset.state = state;
   statusNode.textContent = text;
+  paintChrome(token);
+}
+
+function paintChrome(token: number): void {
+  if (token !== generation || !barHost) return;
+  const status = pageStatus();
+  const chip = toolbarChip(status.state, pairText);
+  if (chipNode?.isConnected) {
+    chipNode.textContent = chip.text;
+    chipNode.classList.toggle("live", chip.live);
+  }
+  if (stopButton?.isConnected) stopButton.hidden = !status.canStop;
 }
 
 async function onCopyAll(button: HTMLButtonElement): Promise<void> {

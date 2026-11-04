@@ -151,30 +151,16 @@ try {
     await chrome.storage.local.set({ "yifan.settings.v1": current });
   });
 
-  const aiCancel = sw.evaluate((id) => chrome.tabs.sendMessage(id, { type: "show-page-ai" }), tabId);
-  await page.locator("#yifan-dialog").waitFor({ timeout: 5000 });
-  const aiCopy = await shadowText(page, "yifan-dialog");
-  if (!aiCopy.includes("原位替换为译文") || !aiCopy.includes("可见区直接换成译文")) {
-    fail(`整页 AI 确认文案不对: ${aiCopy}`);
-  }
-  if (aiCopy.includes("段落下方") || aiCopy.includes("退出对照")) fail(`确认框还是旧文案: ${aiCopy}`);
-  await page.locator("#yifan-dialog").screenshot({ path: path.join(shots, "confirm-ai.png") });
-  await page.locator("#yifan-dialog").getByRole("button", { name: "取消" }).click();
-  await aiCancel;
-  await page.waitForTimeout(200);
-  if (await page.locator("#yifan-page").count()) fail("取消整页 AI 之后仍然出现盖层");
-  if (await page.locator("[data-yifan-inline]").count()) fail("取消整页 AI 之后仍然插入了译文");
-  if (await page.locator("[data-yifan-replaced]").count()) fail("取消整页 AI 之后替换了原文");
-  if (page.url() !== pageUrl) fail(`取消后 URL 变了: ${page.url()}`);
-
   const aiRun = sw.evaluate((id) => chrome.tabs.sendMessage(id, { type: "show-page-ai" }), tabId);
-  await page.locator("#yifan-dialog").getByRole("button", { name: "确认翻译" }).click();
   await page.locator("#yifan-inline-bar").waitFor({ timeout: 5000 });
+  if (await page.locator("#yifan-dialog").count()) fail("整页 AI 不应再弹出二次确认");
   await page.waitForFunction((id) => window.shadowPlain(id).includes("不会假翻"), "yifan-inline-bar");
   const barText = await shadowText(page, "yifan-inline-bar");
   if (!barText.includes("译文直接替换原文；下滑自动续翻；清除可还原")) fail(`工具条说明不对: ${barText}`);
   if (!barText.includes("继续下滑将自动续翻未译段落（每批最多 200 段）")) fail(`工具条没有续翻说明: ${barText}`);
-  if (!barText.includes("复制全部译文") || !barText.includes("清除译文")) fail(`工具条按钮不对: ${barText}`);
+  if (!barText.includes("停止") || !barText.includes("复制全部译文") || !barText.includes("清除译文")) {
+    fail(`工具条按钮不对: ${barText}`);
+  }
   if (barText.includes("退出对照") || barText.includes("段落下")) fail(`工具条还是旧文案: ${barText}`);
   if (!barText.includes("不会假翻")) fail("没 Key 时工具条应写明失败");
   if (await page.locator("[data-yifan-inline]").count()) fail("整页 AI 仍在段落下插译文");
@@ -244,7 +230,16 @@ try {
   await sw.evaluate(async () => chrome.storage.local.remove("yifan.settings.v1"));
   const popup = await context.newPage();
   await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+  await popup.getByRole("heading", { name: "设置" }).waitFor();
+  await popup.getByRole("button", { name: "返回主弹窗" }).click();
   await popup.getByRole("heading", { name: "一翻" }).waitFor();
+  await popup.getByRole("button", { name: "开始" }).waitFor();
+  await popup.getByRole("button", { name: "停止" }).waitFor();
+  await popup.getByRole("button", { name: "清除" }).waitFor();
+  if (await popup.locator("#api-key").isVisible()) fail("主弹窗不该出现 API Key");
+  if (await popup.locator("#model").isVisible()) fail("主弹窗不该出现模型选择");
+  await popup.getByRole("button", { name: "设置", exact: true }).click();
+  await popup.getByRole("heading", { name: "设置" }).waitFor();
   const defaultModel = await popup.locator("#model").inputValue();
   if (defaultModel !== "qwen3.7-plus") fail(`默认模型不是 qwen3.7-plus: ${defaultModel}`);
   const confirmPressed = await popup.locator("#mode-confirm").getAttribute("aria-pressed");

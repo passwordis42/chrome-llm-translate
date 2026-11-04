@@ -11,6 +11,106 @@ export const CONFIRM_DETAIL =
 
 export const REPLACED_ATTR = "data-yifan-replaced";
 
+export type PageRunState = "idle" | "running" | "stopped" | "done";
+
+export interface PageControlStatus {
+  ok: true;
+  state: PageRunState;
+  label: string;
+  hint: string;
+  canStart: boolean;
+  canStop: boolean;
+  canClear: boolean;
+  startLabel: "开始" | "继续";
+  progress: number | null;
+}
+
+export interface PageRunInput {
+  open: boolean;
+  stopped: boolean;
+  pending: boolean;
+  doneCount: number;
+  totalCount: number;
+  error?: string;
+}
+
+const IDLE_STATUS: PageControlStatus = {
+  ok: true,
+  state: "idle",
+  label: "当前页 · 空闲",
+  hint: "点开始，整页原位换成译文",
+  canStart: true,
+  canStop: false,
+  canClear: false,
+  startLabel: "开始",
+  progress: null,
+};
+
+/** 主弹窗和工具条共用的整页状态。停止只中断，不把已译段算回去。 */
+export function derivePageStatus(input: PageRunInput): PageControlStatus {
+  if (!input.open) return IDLE_STATUS;
+  if (input.stopped) {
+    const error = input.error?.trim() ?? "";
+    return {
+      ok: true,
+      state: "stopped",
+      label: "已停止 · 已翻保留",
+      hint: error || "已中断 · 已翻段落保留，可继续",
+      canStart: true,
+      canStop: false,
+      canClear: true,
+      startLabel: "继续",
+      progress: null,
+    };
+  }
+  if (input.pending) {
+    const progress = input.totalCount > 0 ? Math.min(1, Math.max(0, input.doneCount / input.totalCount)) : 0;
+    return {
+      ok: true,
+      state: "running",
+      label: "翻译中…",
+      hint: "正在替换可见区；下滑续翻",
+      canStart: false,
+      canStop: true,
+      canClear: true,
+      startLabel: "开始",
+      progress,
+    };
+  }
+  return {
+    ok: true,
+    state: "done",
+    label: "本页已翻完",
+    hint: "先清除可整页重翻；或再点开始查漏",
+    canStart: true,
+    canStop: false,
+    canClear: true,
+    startLabel: "开始",
+    progress: null,
+  };
+}
+
+/** 运行中忽略再次开始。已停止或已完成只续未译段，不重开一页。 */
+export function startKind(state: PageRunState): "fresh" | "resume" | "busy" {
+  if (state === "running") return "busy";
+  if (state === "stopped" || state === "done") return "resume";
+  return "fresh";
+}
+
+export function toolbarChip(state: PageRunState, pair: string): { text: string; live: boolean } {
+  if (state === "running") return { text: `翻译中 · ${pair}`, live: true };
+  if (state === "stopped") return { text: `已停止 · ${pair}`, live: false };
+  if (state === "done") return { text: `已完成 · ${pair}`, live: false };
+  return { text: pair, live: false };
+}
+
+/** 中断后把未完成段落移出进行中集合，续翻才能再次取到。已完成的留下。 */
+export function releaseUnfinished(queued: Set<string>, done: ReadonlySet<string>): void {
+  for (const id of [...queued]) {
+    if (!done.has(id)) queued.delete(id);
+  }
+}
+
 export interface TextSnapshot {
   anchor: Element;
   html: string;

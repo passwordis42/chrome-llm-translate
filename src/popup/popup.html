@@ -8,12 +8,48 @@
   <link rel="stylesheet" href="popup.css" />
 </head>
 <body>
-  <div class="popup" id="settings-view">
+  <div class="popup" id="home-view">
     <div class="hd">
       <img class="logo" src="icons/icon128.png" width="28" height="28" alt="" />
-      <div>
+      <div class="hd-text">
         <h1>一翻</h1>
-        <div class="sub">通义千问 · Chrome / Edge 设置</div>
+        <div class="sub">整页 AI</div>
+      </div>
+      <button class="gear" id="open-settings" type="button" aria-label="设置" title="设置">
+        <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+          <path fill="currentColor" d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.2 7.2 0 0 0-1.63-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42l-.36 2.54c-.58.22-1.12.53-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.71 8.84a.5.5 0 0 0 .12.64l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32c.13.22.39.31.6.22l2.39-.96c.51.41 1.05.72 1.63.94l.36 2.54c.05.24.26.42.5.42h3.84c.24 0 .45-.18.5-.42l.36-2.54c.58-.22 1.12-.53 1.63-.94l2.39.96c.22.09.47 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58zM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7z"/>
+        </svg>
+      </button>
+    </div>
+    <div class="body">
+      <div class="page-status" id="page-status" data-state="idle" role="status">
+        <span class="dot" aria-hidden="true"></span>
+        <div>
+          <div class="st-label" id="status-label">当前页 · 空闲</div>
+          <div class="st-hint" id="status-hint">点开始，整页原位换成译文</div>
+        </div>
+      </div>
+      <div class="progress" id="progress" hidden>
+        <span id="progress-bar"></span>
+      </div>
+      <div class="ops">
+        <button class="btn primary" id="start-page" type="button">开始</button>
+        <button class="btn" id="stop-page" type="button" disabled>停止</button>
+        <button class="btn" id="clear-page" type="button" disabled>清除</button>
+      </div>
+      <div class="foot">
+        <button class="settings-link" id="settings-link" type="button">设置 →</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="popup" id="settings-view" hidden>
+    <div class="hd hd-settings">
+      <button class="back" id="back-home" type="button" aria-label="返回主弹窗">←</button>
+      <img class="logo" src="icons/icon128.png" width="28" height="28" alt="" />
+      <div>
+        <h1>设置</h1>
+        <div class="sub">通义千问 · API / 模型 / 划词</div>
       </div>
     </div>
     <div class="body">

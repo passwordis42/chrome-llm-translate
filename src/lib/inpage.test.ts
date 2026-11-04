@@ -11,11 +11,15 @@ import {
   SCROLL_HINT,
   TOOLBAR_META,
   collectReplacedText,
+  derivePageStatus,
   ensureSnapshot,
   isInViewport,
   nextVisibleBatch,
+  releaseUnfinished,
   replaceInPlace,
   restoreSnapshots,
+  startKind,
+  toolbarChip,
   type TextSnapshot,
 } from "./inpage.ts";
 
@@ -235,6 +239,13 @@ describe("page translation copy and behavior", () => {
     assert.match(pageview, /IntersectionObserver/);
     assert.match(pageview, /复制全部译文/);
     assert.match(pageview, /清除译文/);
+    assert.match(pageview, /停止/);
+    assert.match(pageview, /startKind\(pageStatus\(\)\.state\)/);
+    assert.match(pageview, /releaseUnfinished/);
+    const resume = pageview.slice(pageview.indexOf("function resumeInlinePage"), pageview.indexOf("function anchorKey"));
+    assert.match(resume, /releaseUnfinished/);
+    assert.equal(resume.includes("restoreSnapshots"), false);
+    assert.equal(resume.includes("clearInlinePage"), false);
     assert.equal(pageview.includes("insertTranslationsBelow"), false);
     assert.equal(pageview.includes("data-yifan-inline"), false);
     assert.equal(pageview.includes("退出对照"), false);
@@ -245,10 +256,14 @@ describe("page translation copy and behavior", () => {
     assert.equal(pageview.includes("openSideBySide"), false);
     assert.equal(pageview.includes("整页 AI 对照阅读"), false);
 
-    assert.match(confirm, /CONFIRM_LEAD/);
-    assert.match(confirm, /CONFIRM_EMPHASIS/);
-    assert.match(confirm, /CONFIRM_DETAIL/);
-    assert.match(confirm, /确认翻译/);
+    assert.equal(confirm.includes("CONFIRM_LEAD"), false);
+    assert.equal(confirm.includes("确认翻译"), false);
+    assert.match(confirm, /唤起页面翻译/);
+    assert.match(confirm, /showConfirm\(mode: "google"\)/);
+    assert.equal(content.includes('showConfirm("ai")'), false);
+    assert.match(content, /showConfirm\("google"\)/);
+    assert.match(content, /startInlinePage/);
+    assert.match(content, /stopInlinePage/);
     assert.equal(confirm.includes("段落下方"), false);
     assert.equal(confirm.includes("退出对照"), false);
     assert.equal(dom.includes("data-yifan-inline"), false);
@@ -259,5 +274,73 @@ describe("page translation copy and behavior", () => {
     assert.equal(background.includes("googleTranslateUrl"), false);
     assert.equal(background.includes("translate.google.com/translate"), false);
     assert.match(background, /decideGooglePage/);
+  });
+});
+
+describe("page start and stop", () => {
+  it("describes idle, running, stopped, and done without dropping finished paragraphs", () => {
+    const idle = derivePageStatus({ open: false, stopped: false, pending: false, doneCount: 0, totalCount: 0 });
+    assert.equal(idle.state, "idle");
+    assert.equal(idle.label, "当前页 · 空闲");
+    assert.equal(idle.hint, "点开始，整页原位换成译文");
+    assert.equal(idle.canStart, true);
+    assert.equal(idle.canStop, false);
+    assert.equal(idle.canClear, false);
+    assert.equal(idle.startLabel, "开始");
+    assert.equal(startKind(idle.state), "fresh");
+
+    const running = derivePageStatus({ open: true, stopped: false, pending: true, doneCount: 1, totalCount: 4 });
+    assert.equal(running.state, "running");
+    assert.equal(running.label, "翻译中…");
+    assert.equal(running.hint, "正在替换可见区；下滑续翻");
+    assert.equal(running.canStart, false);
+    assert.equal(running.canStop, true);
+    assert.equal(running.canClear, true);
+    assert.equal(running.progress, 0.25);
+    assert.equal(startKind(running.state), "busy");
+    assert.deepEqual(toolbarChip(running.state, "EN → 中文"), { text: "翻译中 · EN → 中文", live: true });
+
+    const stopped = derivePageStatus({
+      open: true,
+      stopped: true,
+      pending: true,
+      doneCount: 1,
+      totalCount: 4,
+    });
+    assert.equal(stopped.state, "stopped");
+    assert.equal(stopped.label, "已停止 · 已翻保留");
+    assert.equal(stopped.hint, "已中断 · 已翻段落保留，可继续");
+    assert.equal(stopped.startLabel, "继续");
+    assert.equal(stopped.canStop, false);
+    assert.equal(stopped.canClear, true);
+    assert.equal(startKind(stopped.state), "resume");
+
+    const failed = derivePageStatus({
+      open: true,
+      stopped: true,
+      pending: true,
+      doneCount: 1,
+      totalCount: 4,
+      error: "API Key 无效。不会假翻。",
+    });
+    assert.equal(failed.hint, "API Key 无效。不会假翻。");
+    assert.equal(failed.startLabel, "继续");
+
+    const done = derivePageStatus({ open: true, stopped: false, pending: false, doneCount: 4, totalCount: 4 });
+    assert.equal(done.state, "done");
+    assert.equal(done.label, "本页已翻完");
+    assert.equal(done.hint, "先清除可整页重翻；或再点开始查漏");
+    assert.equal(done.canStart, true);
+    assert.equal(done.canStop, false);
+    assert.equal(done.startLabel, "开始");
+    assert.equal(startKind(done.state), "resume");
+    assert.equal(toolbarChip(done.state, "EN → 中文").live, false);
+  });
+
+  it("releases unfinished ids and leaves completed ones queued out of the way", () => {
+    const queued = new Set(["a", "b", "c"]);
+    const done = new Set(["b"]);
+    releaseUnfinished(queued, done);
+    assert.deepEqual([...queued], ["b"]);
   });
 });
