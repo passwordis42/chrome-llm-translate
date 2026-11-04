@@ -132,7 +132,16 @@ describe("settings ui and edge notes", () => {
     assert.equal(document.querySelector("#mode-confirm")?.textContent, "先确认再翻");
     assert.equal(document.querySelector("#mode-confirm")?.getAttribute("aria-pressed"), "true");
     assert.equal(document.querySelector("#mode-immediate")?.textContent, "划完即翻");
-    assert.equal(document.querySelector(".sub")?.textContent, "通义千问 · Chrome / Edge 设置");
+    assert.equal(document.querySelector("#settings-view .sub")?.textContent, "通义千问 · API / 模型 / 划词");
+    const home = document.querySelector("#home-view");
+    assert.equal(home?.querySelector("#api-key"), null);
+    assert.equal(home?.querySelector("#model"), null);
+    assert.equal(home?.querySelector("#start-page")?.textContent, "开始");
+    assert.equal(home?.querySelector("#stop-page")?.textContent, "停止");
+    assert.equal(home?.querySelector("#clear-page")?.textContent, "清除");
+    assert.equal(home?.querySelector(".sub")?.textContent, "整页 AI");
+    assert.equal(document.querySelector("#back-home")?.getAttribute("aria-label"), "返回主弹窗");
+    assert.equal(document.querySelector("#settings-view h1")?.textContent, "设置");
     assert.match(html, /选中文本弹出确认或浮层（默认开）/);
     assert.match(html, /默认先确认再翻，避免误触耗额度/);
     for (const legacy of LEGACY_MODELS) {
@@ -147,10 +156,10 @@ describe("settings ui and edge notes", () => {
       version: string;
       manifest_version: number;
     };
-    assert.equal(manifest.version, "0.1.5");
+    assert.equal(manifest.version, "0.1.6");
     assert.equal(manifest.manifest_version, 3);
     for (const doc of [readme, edge]) {
-      assert.match(doc, /0\.1\.5/);
+      assert.match(doc, /0\.1\.6/);
       assert.match(doc, /edge:\/\/extensions/);
       assert.match(doc, /chrome:\/\/extensions/);
       assert.match(doc, /dist\//);

@@ -10,7 +10,7 @@ function check(condition, message) {
 
 check(manifest.manifest_version === 3, "manifest_version");
 check(manifest.name === "一翻", "name");
-check(manifest.version === "0.1.5", "version");
+check(manifest.version === "0.1.6", "version");
 check(manifest.content_scripts?.[0]?.run_at === "document_start", "content script starts early enough to beat select bans");
 check(manifest.background?.service_worker === "background.js", "service worker");
 check(manifest.content_scripts?.[0]?.js?.[0] === "content.js", "content script");
@@ -40,10 +40,13 @@ check(content.includes("一翻 · 确认翻译"), "selection confirm title");
 check(content.includes("关闭确认条"), "selection confirm close label");
 check(content.includes("清除译文"), "inline clear control");
 check(content.includes("复制全部译文"), "copy all translations");
+check(content.includes("停止"), "inline stop control");
+check(content.includes("已停止 · 已翻保留"), "stopped status");
+check(content.includes("翻译中…"), "running status");
 check(content.includes("译文直接替换原文；下滑自动续翻；清除可还原"), "toolbar meta");
 check(content.includes("继续下滑将自动续翻未译段落（每批最多 200 段）"), "scroll hint");
-check(content.includes("原位替换为译文"), "confirm emphasis");
-check(content.includes("可见区直接换成译文；下滑露出新字自动续翻（每批最多 200 段）；可一键清除还原原文。"), "confirm detail");
+check(content.includes("唤起页面翻译"), "google confirm remains");
+check(!content.includes('showConfirm("ai")') && !content.includes("需确认后才会开始翻译"), "page AI has no second confirm");
 check(content.includes("data-yifan-replaced"), "in-place marker");
 check(!content.includes("data-yifan-inline"), "no inline slot marker");
 check(!content.includes("退出对照"), "no exit-bilingual control");
@@ -66,6 +69,13 @@ check(popup.includes('class="new-tag"'), "force-select new tag");
 check(popup.includes('id="force-select-toggle"'), "force-select toggle");
 check(popup.includes('aria-checked="false"'), "force-select defaults off");
 check(popup.includes("允许划选被禁文字，已关闭"), "force-select closed label");
+check(popup.includes('id="home-view"'), "home view");
+check(popup.includes('id="start-page"') && popup.includes('id="stop-page"') && popup.includes('id="clear-page"'), "start stop clear");
+check(popup.includes('id="back-home"'), "settings back");
+check(popup.includes("返回主弹窗"), "settings back label");
+check(popup.includes("点开始，整页原位换成译文"), "idle hint");
+const popupJs = readFileSync("dist/popup.js", "utf8");
+check(popupJs.includes("page-ai-start") && popupJs.includes("page-ai-stop") && popupJs.includes("page-ai-clear"), "popup commands");
 
 const background = readFileSync("dist/background.js", "utf8");
 check(background.includes("dashscope.aliyuncs.com"), "qwen endpoint bundled");

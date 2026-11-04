@@ -35,5 +35,9 @@ export interface ShowPageMessage {
   type: "show-page-ai" | "show-page-google";
 }
 
+export interface PageAiControlMessage {
+  type: "page-ai-start" | "page-ai-stop" | "page-ai-clear" | "page-ai-status";
+}
+
 export type ToWorkerMessage = TestConnectionMessage | GoogleTranslateMessage | OpenSettingsMessage;
-export type ToPageMessage = TranslateSelectionMessage | ShowPageMessage;
+export type ToPageMessage = TranslateSelectionMessage | ShowPageMessage | PageAiControlMessage;
