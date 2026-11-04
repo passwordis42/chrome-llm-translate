@@ -157,8 +157,8 @@ try {
   await page.waitForFunction((id) => window.shadowPlain(id).includes("不会假翻"), "yifan-inline-bar");
   const barText = await shadowText(page, "yifan-inline-bar");
   if (!barText.includes("译文直接替换原文；下滑自动续翻；清除可还原")) fail(`工具条说明不对: ${barText}`);
-  if (!barText.includes("继续下滑将自动续翻未译段落（每批最多 200 段）")) fail(`工具条没有续翻说明: ${barText}`);
-  if (!barText.includes("停止") || !barText.includes("复制全部译文") || !barText.includes("清除译文")) {
+  if (!barText.includes("继续翻译")) fail(`停态工具条没有继续翻译: ${barText}`);
+  if (!barText.includes("复制全部译文") || !barText.includes("清除译文")) {
     fail(`工具条按钮不对: ${barText}`);
   }
   if (barText.includes("退出对照") || barText.includes("段落下")) fail(`工具条还是旧文案: ${barText}`);
@@ -168,6 +168,10 @@ try {
   const sampleText = await page.locator("#sample").textContent();
   if (!sampleText?.includes("When a sentence matters")) fail("没 Key 时原文被替换了");
   if (sampleText?.includes("不会假翻")) fail("失败提示写进了原文");
+  await page.locator("#yifan-inline-bar").getByRole("button", { name: "继续翻译" }).click();
+  await page.waitForTimeout(400);
+  if (await page.locator("[data-yifan-replaced]").count()) fail("继续翻译在没 Key 时不应原位替换");
+  if (!(await page.locator("#sample").textContent())?.includes("When a sentence matters")) fail("继续翻译改了原文");
   const originalStillThere = await page.locator("article h1").textContent();
   if (!originalStillThere?.includes("Large language models")) fail("原文标题被替换了");
   if (await page.locator("#yifan-page").count()) fail("整页 AI 不该打开全屏盖层");
@@ -227,6 +231,34 @@ try {
   }
   await googleRun;
 
+  const cropOpen = sw.evaluate((id) => chrome.tabs.sendMessage(id, { type: "start-crop-ocr" }), tabId);
+  await page.locator("#yifan-crop").waitFor({ timeout: 5000 });
+  const cropText = await shadowText(page, "yifan-crop");
+  if (!cropText.includes("框选识译") || !cropText.includes("Esc")) fail(`框选态文案不对: ${cropText}`);
+  if (!cropText.includes("不改页面正文")) fail(`框选没有隐私说明: ${cropText}`);
+  await page.keyboard.press("Escape");
+  await page.locator("#yifan-crop").waitFor({ state: "detached", timeout: 3000 });
+  await cropOpen;
+  if (!(await page.locator("#sample").textContent())?.includes("When a sentence matters")) fail("取消框选改了正文");
+
+  await sw.evaluate((id) => chrome.tabs.sendMessage(id, { type: "start-crop-ocr" }), tabId);
+  await page.locator("#yifan-crop").waitFor({ timeout: 5000 });
+  const hostBox = await page.locator("#yifan-crop").boundingBox();
+  if (!hostBox) fail("框选层没有尺寸");
+  await page.mouse.move(hostBox.x + 180, hostBox.y + 150);
+  await page.mouse.down();
+  await page.mouse.move(hostBox.x + 460, hostBox.y + 300, { steps: 8 });
+  await page.mouse.up();
+  await page.locator("#yifan-ocr").waitFor({ timeout: 15000 });
+  const ocrText = await shadowText(page, "yifan-ocr");
+  if (!ocrText.includes("API Key") || !ocrText.includes("不会假翻")) fail(`没 Key 的识译应失败: ${ocrText}`);
+  if (ocrText.includes("截不到当前页面")) fail(`选区没有截下来: ${ocrText}`);
+  if (ocrText.includes("假译文")) fail(`识译出现了假译文: ${ocrText}`);
+  if (await page.locator("[data-yifan-replaced]").count()) fail("识译改了页面正文");
+  if (!(await page.locator("#sample").textContent())?.includes("When a sentence matters")) fail("识译后原文丢了");
+  await page.keyboard.press("Escape");
+  await page.locator("#yifan-ocr").waitFor({ state: "detached", timeout: 3000 });
+
   await sw.evaluate(async () => chrome.storage.local.remove("yifan.settings.v1"));
   const popup = await context.newPage();
   await popup.goto(`chrome-extension://${extensionId}/popup.html`);
@@ -236,8 +268,18 @@ try {
   await popup.getByRole("button", { name: "开始" }).waitFor();
   await popup.getByRole("button", { name: "停止" }).waitFor();
   await popup.getByRole("button", { name: "清除" }).waitFor();
+  await popup.getByRole("button", { name: /截图识译/ }).waitFor();
   if (await popup.locator("#api-key").isVisible()) fail("主弹窗不该出现 API Key");
   if (await popup.locator("#model").isVisible()) fail("主弹窗不该出现模型选择");
+  await popup.locator("#home-target-lang").selectOption("ja");
+  await popup.waitForTimeout(300);
+  const picked = await sw.evaluate(async () => {
+    const bag = await chrome.storage.local.get("yifan.settings.v1");
+    return bag["yifan.settings.v1"]?.targetLang ?? "";
+  });
+  if (picked !== "ja") fail(`主弹窗目标语言没有马上写入: ${picked}`);
+  await popup.locator("#home-target-lang").selectOption("zh");
+  await popup.waitForTimeout(200);
   await popup.getByRole("button", { name: "设置", exact: true }).click();
   await popup.getByRole("heading", { name: "设置" }).waitFor();
   const defaultModel = await popup.locator("#model").inputValue();

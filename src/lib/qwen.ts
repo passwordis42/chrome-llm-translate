@@ -25,6 +25,48 @@ export function buildChatBody(opts: ChatBodyOptions): Record<string, unknown> {
   return body;
 }
 
+export interface VisionBodyOptions {
+  model: string;
+  prompt: string;
+  imageDataUrl: string;
+  maxTokens?: number;
+}
+
+/** 识图走同一套兼容模式，但 content 是图文数组，并且不流式。 */
+export function buildVisionBody(opts: VisionBodyOptions): Record<string, unknown> {
+  return {
+    model: opts.model,
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: opts.prompt },
+          { type: "image_url", image_url: { url: opts.imageDataUrl } },
+        ],
+      },
+    ],
+    stream: false,
+    temperature: 0.1,
+    enable_thinking: false,
+    max_tokens: opts.maxTokens ?? 2048,
+  };
+}
+
+export function completionText(json: unknown): string {
+  if (!json || typeof json !== "object") return "";
+  const choice = (json as { choices?: Array<{ message?: { content?: unknown } }> }).choices?.[0];
+  const content = choice?.message?.content;
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((part) => {
+      if (!part || typeof part !== "object") return "";
+      const text = (part as { text?: unknown }).text;
+      return typeof text === "string" ? text : "";
+    })
+    .join("");
+}
+
 export function isSuccessfulCompletion(json: unknown): boolean {
   if (!json || typeof json !== "object") return false;
   const record = json as { error?: unknown; choices?: unknown };
@@ -130,7 +172,50 @@ export async function testConnection(opts: {
   if (!isSuccessfulCompletion(json)) throw emptyCompletionError("settings");
 }
 
-function mapFetchError(error: unknown, userSignal: AbortSignal, where: "settings" | "float"): Error {
+export async function completeVision(opts: {
+  apiKey: string;
+  model: string;
+  prompt: string;
+  imageDataUrl: string;
+  signal: AbortSignal;
+  fetchImpl?: typeof fetch;
+}): Promise<string> {
+  const fetchImpl = opts.fetchImpl ?? fetch;
+  let response: Response;
+  try {
+    response = await fetchImpl(QWEN_CHAT_COMPLETIONS_URL, {
+      method: "POST",
+      signal: requestSignal(opts.signal, 45_000),
+      headers: {
+        Authorization: `Bearer ${opts.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(
+        buildVisionBody({
+          model: opts.model,
+          prompt: opts.prompt,
+          imageDataUrl: opts.imageDataUrl,
+        }),
+      ),
+    });
+  } catch (error) {
+    throw mapFetchError(error, opts.signal, "ocr");
+  }
+  const text = await response.text().catch(() => "");
+  if (!response.ok) throw httpFailure("ocr", response.status, text, opts.apiKey);
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    throw emptyCompletionError("ocr");
+  }
+  if (!isSuccessfulCompletion(json)) throw emptyCompletionError("ocr");
+  const content = completionText(json).trim();
+  if (!content) throw emptyCompletionError("ocr");
+  return content;
+}
+
+function mapFetchError(error: unknown, userSignal: AbortSignal, where: "settings" | "float" | "ocr"): Error {
   if (userSignal.aborted) {
     return error instanceof Error ? error : new DOMException("aborted", "AbortError");
   }

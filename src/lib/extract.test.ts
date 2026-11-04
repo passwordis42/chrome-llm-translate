@@ -131,7 +131,7 @@ describe("menu", () => {
     const titles = menuItems()
       .map((item) => item.title)
       .filter((title): title is string => Boolean(title));
-    assert.deepEqual(titles, ["翻译选中内容", "整页 AI 翻译…", "整页谷歌翻译…", "打开设置"]);
+    assert.deepEqual(titles, ["翻译选中内容", "整页 AI 翻译…", "整页谷歌翻译…", "框选识译…", "打开设置"]);
   });
 });
 

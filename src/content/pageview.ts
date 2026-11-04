@@ -3,6 +3,7 @@ import {
   PAGE_BATCH_LIMIT,
   SCROLL_HINT,
   TOOLBAR_META,
+  TOOLBAR_STOPPED_HINT,
   collectReplacedText,
   derivePageStatus,
   ensureSnapshot,
@@ -12,6 +13,7 @@ import {
   replaceInPlace,
   restoreSnapshots,
   startKind,
+  toolbarActions,
   toolbarChip,
   type PageControlStatus,
   type TextSnapshot,
@@ -46,6 +48,7 @@ let snapshots = new Map<Element, TextSnapshot>();
 let activePump: Promise<void> | null = null;
 let releasePump: (() => void) | null = null;
 let stopButton: HTMLButtonElement | null = null;
+let resumeButton: HTMLButtonElement | null = null;
 let chipNode: HTMLElement | null = null;
 let pairText = "自动 → 中文";
 const anchorIds = new WeakMap<Element, string>();
@@ -106,6 +109,7 @@ export function clearInlinePage(): void {
   hintNode = null;
   statusNode = null;
   stopButton = null;
+  resumeButton = null;
   chipNode = null;
 }
 
@@ -348,6 +352,13 @@ function renderBar(sample: string): void {
   pairText = settings ? pairLabel(settings.sourceLang, settings.targetLang, sample) : "自动 → 中文";
   const chip = el("span", "chip", pairText);
   chipNode = chip;
+  const resume = el("button", "btn primary", "继续翻译");
+  resume.type = "button";
+  resume.hidden = true;
+  resume.addEventListener("click", () => {
+    void startInlinePage();
+  });
+  resumeButton = resume;
   const stop = el("button", "btn stop", "停止");
   stop.type = "button";
   stop.addEventListener("click", () => stopInlinePage());
@@ -358,7 +369,7 @@ function renderBar(sample: string): void {
   const clear = el("button", "btn", "清除译文");
   clear.type = "button";
   clear.addEventListener("click", () => clearInlinePage());
-  right.append(chip, stop, copyAll, clear);
+  right.append(chip, resume, stop, copyAll, clear);
   toolbar.append(left, right);
 
   hintNode = el("p", "hint", SCROLL_HINT);
@@ -374,7 +385,10 @@ function setHint(pending: boolean, token: number): void {
   if (status.state === "running" && pending) {
     hintNode.hidden = false;
     hintNode.textContent = SCROLL_HINT;
-  } else if (status.state === "stopped" || status.state === "done") {
+  } else if (status.state === "stopped") {
+    hintNode.hidden = false;
+    hintNode.textContent = TOOLBAR_STOPPED_HINT;
+  } else if (status.state === "done") {
     hintNode.hidden = false;
     hintNode.textContent = status.hint;
   } else {
@@ -397,9 +411,19 @@ function paintChrome(token: number): void {
   const chip = toolbarChip(status.state, pairText);
   if (chipNode?.isConnected) {
     chipNode.textContent = chip.text;
-    chipNode.classList.toggle("live", chip.live);
+    chipNode.classList.toggle("live", chip.tone === "run");
+    chipNode.classList.toggle("stopped", chip.tone === "stopped");
   }
-  if (stopButton?.isConnected) stopButton.hidden = !status.canStop;
+  const actions = toolbarActions(status.state);
+  if (resumeButton?.isConnected) resumeButton.hidden = !actions.resume;
+  if (stopButton?.isConnected) stopButton.hidden = !actions.stop;
+}
+
+export function syncToolbarPair(): void {
+  const settings = deps?.getSettings();
+  if (!settings || !barHost) return;
+  pairText = pairLabel(settings.sourceLang, settings.targetLang, tracked[0]?.text ?? "");
+  paintChrome(generation);
 }
 
 async function onCopyAll(button: HTMLButtonElement): Promise<void> {

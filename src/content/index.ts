@@ -1,7 +1,8 @@
 import { dismissConfirm, isConfirmOpen, showConfirm, showNotice } from "./confirm.ts";
+import { dismissOcrUi, isOcrUiActive, startCrop } from "./crop.ts";
 import { isYifanEvent } from "./dom.ts";
 import { closeSelectionFloat, currentFloatText, initFloat, isFloatOpen, openSelectionFloat, repositionFloat } from "./float.ts";
-import { clearInlinePage, initPage, isInlinePageOpen, pageStatus, startInlinePage, stopInlinePage } from "./pageview.ts";
+import { clearInlinePage, initPage, isInlinePageOpen, pageStatus, startInlinePage, stopInlinePage, syncToolbarPair } from "./pageview.ts";
 import { closeSelectConfirm, currentSelectConfirmText, isSelectConfirmOpen, openSelectConfirm, repositionSelectConfirm } from "./select-confirm.ts";
 import type { PageControlStatus } from "../lib/inpage.ts";
 import type { ToPageMessage } from "../lib/messages.ts";
@@ -60,6 +61,7 @@ function boot(): void {
     settings = normalizeSettings(changes[STORAGE_KEY].newValue);
     ready = true;
     forceSelect.setEnabled(settings.forceSelectEnabled);
+    syncToolbarPair();
   });
 
   chrome.runtime.onMessage.addListener((message: ToPageMessage, _sender, sendResponse) => {
@@ -85,6 +87,7 @@ function boot(): void {
   document.addEventListener("keyup", (event) => {
     if (event.key === "Escape") {
       if (isConfirmOpen()) return;
+      if (dismissOcrUi()) return;
       if (isSelectConfirmOpen()) {
         closeSelectConfirm();
         return;
@@ -112,7 +115,7 @@ function boot(): void {
   });
 
   function offerSelection(): void {
-    if (!ready || isConfirmOpen()) return;
+    if (!ready || isConfirmOpen() || isOcrUiActive()) return;
     const active = document.activeElement;
     if (active instanceof HTMLElement) {
       if (/^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName)) return;
@@ -165,6 +168,13 @@ function boot(): void {
         await showNotice("一翻 · 整页 AI", "这一页没有找到可翻译的段落。没有改动原文。");
       }
       return pageStatus();
+    }
+    if (message.type === "start-crop-ocr") {
+      closeSelectionFloat();
+      closeSelectConfirm();
+      dismissConfirm();
+      startCrop();
+      return;
     }
     if (message.type === "show-page-google") {
       closeSelectionFloat();

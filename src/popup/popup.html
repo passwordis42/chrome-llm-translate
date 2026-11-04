@@ -13,7 +13,7 @@
       <img class="logo" src="icons/icon128.png" width="28" height="28" alt="" />
       <div class="hd-text">
         <h1>一翻</h1>
-        <div class="sub">整页 AI</div>
+        <div class="sub">整页 AI · v0.1.7</div>
       </div>
       <button class="gear" id="open-settings" type="button" aria-label="设置" title="设置">
         <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
@@ -36,6 +36,47 @@
         <button class="btn primary" id="start-page" type="button">开始</button>
         <button class="btn" id="stop-page" type="button" disabled>停止</button>
         <button class="btn" id="clear-page" type="button" disabled>清除</button>
+      </div>
+      <div class="sec" id="shortcuts">
+        <div class="sec-title">快捷</div>
+        <div class="row2">
+          <div class="field">
+            <div class="flabel">源语言</div>
+            <select id="home-source-lang" aria-label="源语言"></select>
+          </div>
+          <div class="field">
+            <div class="flabel">目标语言</div>
+            <select id="home-target-lang" aria-label="目标语言"></select>
+          </div>
+        </div>
+        <div class="toggle-row">
+          <div>
+            <div class="t-title">划词翻译</div>
+            <div class="t-desc">选中文本弹出确认或浮层</div>
+          </div>
+          <button class="switch" id="home-selection-toggle" type="button" role="switch" aria-checked="true" aria-label="划词翻译已开启"></button>
+        </div>
+        <div class="mode-box">
+          <div class="t-title">划词模式</div>
+          <div class="t-desc">默认先确认再翻，避免误触</div>
+          <div class="seg" role="group" aria-label="划词模式">
+            <button type="button" id="home-mode-confirm" aria-pressed="true">先确认再翻</button>
+            <button type="button" id="home-mode-immediate" aria-pressed="false">划完即翻</button>
+          </div>
+        </div>
+        <div class="toggle-row">
+          <div>
+            <div class="t-title">允许划选被禁文字</div>
+            <div class="t-desc">站点禁划选时强制放开；默认关</div>
+          </div>
+          <button class="switch" id="home-force-select" type="button" role="switch" aria-checked="false" aria-label="允许划选被禁文字，已关闭"></button>
+        </div>
+        <button class="link-btn" id="home-open-glossary" type="button">
+          术语本
+          <span>固定译法优先 →</span>
+        </button>
+        <button class="ocr-btn" id="screenshot-ocr" type="button">✂ 截图识译</button>
+        <p class="ocr-note" id="ocr-note" hidden></p>
       </div>
       <div class="foot">
         <button class="settings-link" id="settings-link" type="button">设置 →</button>

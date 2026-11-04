@@ -14,9 +14,14 @@ export class TranslateError extends Error {
   }
 }
 
-export function missingKeyError(where: "settings" | "float"): TranslateError {
+export type TranslateSurface = "settings" | "float" | "ocr";
+
+export function missingKeyError(where: TranslateSurface): TranslateError {
   if (where === "settings") {
     return new TranslateError("no_key", "连接失败", "请先填写 API Key。不会假翻。", true);
+  }
+  if (where === "ocr") {
+    return new TranslateError("no_key", "识译失败", "请先在设置中填写 API Key。不会假翻。", true);
   }
   return new TranslateError(
     "no_key",
@@ -26,7 +31,7 @@ export function missingKeyError(where: "settings" | "float"): TranslateError {
   );
 }
 
-export function httpFailure(where: "settings" | "float", status: number, body: string, apiKey: string): TranslateError {
+export function httpFailure(where: TranslateSurface, status: number, body: string, apiKey: string): TranslateError {
   const detail = sanitizeDetail(extractApiMessage(body), apiKey);
   if (status === 401 || status === 403) {
     const modelDenied = status === 403 && detail.length > 0 && !/api[- ]?key|unauthorized/i.test(detail);
@@ -59,28 +64,40 @@ export function httpFailure(where: "settings" | "float", status: number, body: s
   );
 }
 
-export function networkFailure(where: "settings" | "float", timedOut = false): TranslateError {
+export function networkFailure(where: TranslateSurface, timedOut = false): TranslateError {
   const message = timedOut
     ? "网络超时。请检查网络后重试——不会假翻。"
     : bodyFor(where);
   return new TranslateError("network", titleFor(where), message, true);
 }
 
-export function emptyCompletionError(where: "settings" | "float"): TranslateError {
-  const message = where === "settings" ? "千问没有返回内容。不会假翻。" : "千问没有返回译文。不会假翻。";
-  return new TranslateError("empty", titleFor(where), message, where === "settings");
+export function emptyCompletionError(where: TranslateSurface): TranslateError {
+  const message =
+    where === "settings"
+      ? "千问没有返回内容。不会假翻。"
+      : where === "ocr"
+        ? "没有识别出文字。不会假翻。"
+        : "千问没有返回译文。不会假翻。";
+  return new TranslateError("empty", titleFor(where), message, where !== "float");
+}
+
+export function noTextError(): TranslateError {
+  return new TranslateError("empty", "识译失败", "这一块没有识别出文字。不会假翻。", true);
 }
 
 export function tooLongError(): TranslateError {
   return new TranslateError("unknown", "翻译失败", "选区超过 5000 字，请缩短后再翻。不会假翻。", false);
 }
 
-function titleFor(where: "settings" | "float"): string {
-  return where === "settings" ? "连接失败" : "翻译失败";
+function titleFor(where: TranslateSurface): string {
+  if (where === "settings") return "连接失败";
+  if (where === "ocr") return "识译失败";
+  return "翻译失败";
 }
 
-function bodyFor(where: "settings" | "float"): string {
+function bodyFor(where: TranslateSurface): string {
   if (where === "settings") return "API Key 无效或网络不可达。请检查后重试——不会假翻。";
+  if (where === "ocr") return "API Key 无效或网络不可达。请到设置中检查后重试——不会假翻。页面正文没有改动。";
   return "API Key 无效或网络不可达。请到设置中检查后重试——不会假翻。";
 }
 

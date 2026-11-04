@@ -18,7 +18,10 @@ import {
   releaseUnfinished,
   replaceInPlace,
   restoreSnapshots,
+  STOPPED_HINT,
+  TOOLBAR_STOPPED_HINT,
   startKind,
+  toolbarActions,
   toolbarChip,
   type TextSnapshot,
 } from "./inpage.ts";
@@ -240,6 +243,9 @@ describe("page translation copy and behavior", () => {
     assert.match(pageview, /复制全部译文/);
     assert.match(pageview, /清除译文/);
     assert.match(pageview, /停止/);
+    assert.match(pageview, /继续翻译/);
+    assert.match(pageview, /toolbarActions/);
+    assert.match(pageview, /TOOLBAR_STOPPED_HINT/);
     assert.match(pageview, /startKind\(pageStatus\(\)\.state\)/);
     assert.match(pageview, /releaseUnfinished/);
     const resume = pageview.slice(pageview.indexOf("function resumeInlinePage"), pageview.indexOf("function anchorKey"));
@@ -298,7 +304,11 @@ describe("page start and stop", () => {
     assert.equal(running.canClear, true);
     assert.equal(running.progress, 0.25);
     assert.equal(startKind(running.state), "busy");
-    assert.deepEqual(toolbarChip(running.state, "EN → 中文"), { text: "翻译中 · EN → 中文", live: true });
+    assert.deepEqual(toolbarChip(running.state, "EN → 中文"), {
+      text: "翻译中 · EN → 中文",
+      live: true,
+      tone: "run",
+    });
 
     const stopped = derivePageStatus({
       open: true,
@@ -309,7 +319,8 @@ describe("page start and stop", () => {
     });
     assert.equal(stopped.state, "stopped");
     assert.equal(stopped.label, "已停止 · 已翻保留");
-    assert.equal(stopped.hint, "已中断 · 已翻段落保留，可继续");
+    assert.equal(stopped.hint, STOPPED_HINT);
+    assert.equal(STOPPED_HINT, "已中断 · 已翻段落保留，可继续");
     assert.equal(stopped.startLabel, "继续");
     assert.equal(stopped.canStop, false);
     assert.equal(stopped.canClear, true);
@@ -335,6 +346,13 @@ describe("page start and stop", () => {
     assert.equal(done.startLabel, "开始");
     assert.equal(startKind(done.state), "resume");
     assert.equal(toolbarChip(done.state, "EN → 中文").live, false);
+    assert.equal(toolbarChip(stopped.state, "EN → 中文").tone, "stopped");
+    assert.deepEqual(toolbarActions("idle"), { resume: false, stop: false, copy: false, clear: false });
+    assert.deepEqual(toolbarActions("running"), { resume: false, stop: true, copy: true, clear: true });
+    assert.deepEqual(toolbarActions("stopped"), { resume: true, stop: false, copy: true, clear: true });
+    assert.deepEqual(toolbarActions("done"), { resume: false, stop: false, copy: true, clear: true });
+    assert.match(TOOLBAR_STOPPED_HINT, /继续翻译/);
+    assert.match(TOOLBAR_STOPPED_HINT, /200/);
   });
 
   it("releases unfinished ids and leaves completed ones queued out of the way", () => {
