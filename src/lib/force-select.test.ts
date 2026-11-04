@@ -175,33 +175,36 @@ describe("force select on a banned paragraph", () => {
 });
 
 describe("force select settings ui", () => {
-  it("places the approved off-by-default switch between selection mode and the glossary", () => {
+  it("keeps the off-by-default switch on the home popup and out of settings", () => {
     const html = readFileSync(new URL("../popup/popup.html", import.meta.url), "utf8");
     const css = readFileSync(new URL("../popup/popup.css", import.meta.url), "utf8");
     const { document } = parseHTML(html);
-    const toggle = document.querySelector<HTMLButtonElement>("#force-select-toggle");
+    const home = document.querySelector("#home-view");
+    const toggle = home?.querySelector<HTMLButtonElement>("#home-force-select");
     const row = toggle?.closest(".toggle-row");
-    assert.ok(toggle && row);
+    assert.ok(home && toggle && row);
     assert.equal(toggle.getAttribute("aria-checked"), "false");
     assert.equal(toggle.getAttribute("aria-label"), "允许划选被禁文字，已关闭");
-    assert.equal(row.querySelector(".new-tag")?.textContent, "新");
-    assert.equal(row.querySelector(".t-title")?.textContent, "允许划选被禁文字新");
-    assert.equal(row.querySelector(".t-desc")?.textContent, "站点禁划选时强制放开，方便划词；默认关，进禁选页再开");
-    const body = document.querySelector("#settings-view .body");
-    const children = [...(body?.children ?? [])];
-    const selectionAt = children.findIndex((node) => node.querySelector("#selection-toggle"));
-    const modeAt = children.findIndex((node) => node.classList.contains("mode-box"));
-    const forceAt = children.findIndex((node) => node.contains(toggle));
-    const glossaryAt = children.findIndex((node) => node.id === "open-glossary");
-    assert.ok(selectionAt >= 0 && selectionAt < modeAt);
-    assert.ok(modeAt >= 0 && forceAt === modeAt + 1 && glossaryAt === forceAt + 1);
+    assert.equal(row.querySelector(".new-tag"), null);
+    assert.equal(row.querySelector(".t-title")?.textContent, "允许划选被禁文字");
+    assert.equal(row.querySelector(".t-desc")?.textContent, "站点禁划选时强制放开；默认关");
+    const homeChildren = [...(home.querySelector("#shortcuts")?.children ?? [])];
+    const selectionAt = homeChildren.findIndex((node) => node.querySelector("#home-selection-toggle"));
+    const forceAt = homeChildren.findIndex((node) => node.contains(toggle));
+    const glossaryAt = homeChildren.findIndex((node) => node.id === "home-open-glossary");
+    assert.ok(selectionAt >= 0 && forceAt === selectionAt + 1 && glossaryAt === forceAt + 1);
+    assert.equal(document.querySelector("#settings-view #force-select-toggle"), null);
+    assert.equal(document.querySelector("#settings-view #selection-toggle"), null);
+    const gesture = document.querySelector("#gesture-toggle");
+    assert.equal(gesture?.getAttribute("aria-checked"), "true");
+    assert.equal(gesture?.closest(".toggle-row")?.querySelector(".new-tag")?.textContent, "新");
     assert.match(css, /\.new-tag/);
 
     const manifest = JSON.parse(readFileSync(new URL("../manifest.json", import.meta.url), "utf8")) as {
       version: string;
       content_scripts: Array<{ run_at?: string }>;
     };
-    assert.equal(manifest.version, "0.1.7");
+    assert.equal(manifest.version, "0.1.8");
     assert.equal(manifest.content_scripts[0]?.run_at, "document_start");
 
     const content = readFileSync(new URL("../content/index.ts", import.meta.url), "utf8");

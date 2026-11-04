@@ -43,6 +43,12 @@ export interface StartCropMessage {
   type: "start-crop-ocr";
 }
 
+export interface ShortcutNoticeMessage {
+  type: "shortcut-notice";
+  title: string;
+  message: string;
+}
+
 export interface CaptureVisibleMessage {
   type: "capture-visible";
 }
@@ -58,4 +64,9 @@ export type ToWorkerMessage =
   | OpenSettingsMessage
   | CaptureVisibleMessage
   | OcrTranslateMessage;
-export type ToPageMessage = TranslateSelectionMessage | ShowPageMessage | PageAiControlMessage | StartCropMessage;
+export type ToPageMessage =
+  | TranslateSelectionMessage
+  | ShowPageMessage
+  | PageAiControlMessage
+  | StartCropMessage
+  | ShortcutNoticeMessage;

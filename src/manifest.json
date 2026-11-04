@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "一翻",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "用通义千问做划词与整页翻译。划词默认先确认；译文原位替换；可框选识译且不改正文。谷歌不跳转。进页不自动翻。",
   "minimum_chrome_version": "116",
   "icons": {
@@ -27,6 +27,22 @@
   "background": {
     "service_worker": "background.js"
   },
+  "commands": {
+    "start-page-translate": {
+      "suggested_key": {
+        "default": "Alt+T",
+        "mac": "Alt+T"
+      },
+      "description": "整页开始或继续翻译"
+    },
+    "start-crop-ocr": {
+      "suggested_key": {
+        "default": "Alt+S",
+        "mac": "Alt+S"
+      },
+      "description": "进入框选截图识译"
+    }
+  },
   "content_scripts": [
     {
       "matches": ["http://*/*", "https://*/*"],
@@ -35,7 +51,7 @@
       "all_frames": false
     }
   ],
-  "permissions": ["storage", "contextMenus", "scripting", "activeTab"],
+  "permissions": ["storage", "contextMenus", "scripting", "activeTab", "notifications"],
   "host_permissions": [
     "https://dashscope.aliyuncs.com/*",
     "https://dashscope-intl.aliyuncs.com/*",
