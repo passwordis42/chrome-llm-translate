@@ -1,4 +1,3 @@
-import { CROP_OCR_COMMAND, PAGE_TRANSLATE_COMMAND } from "../lib/commands.ts";
 import { SOURCE_LANGUAGES, TARGET_LANGUAGES, isSourceLang, isTargetLang } from "../lib/languages.ts";
 import type { PageControlStatus, PageRunState } from "../lib/inpage.ts";
 import type { GlossaryEntry } from "../lib/glossary.ts";
@@ -16,6 +15,15 @@ import {
   type SelectionMode,
   type Settings,
 } from "../lib/settings.ts";
+import {
+  SHORTCUT_IDS,
+  assignShortcut,
+  chordFromKey,
+  defaultShortcuts,
+  formatChord,
+  type ManagedShortcuts,
+  type ShortcutId,
+} from "../lib/shortcuts.ts";
 
 const homeView = document.querySelector<HTMLElement>("#home-view");
 const settingsView = document.querySelector<HTMLElement>("#settings-view");
@@ -51,6 +59,15 @@ const homeSelection = document.querySelector<HTMLButtonElement>("#home-selection
 const homeForce = document.querySelector<HTMLButtonElement>("#home-force-select");
 const hotkeyPage = document.querySelector<HTMLElement>("#hotkey-page");
 const hotkeyCrop = document.querySelector<HTMLElement>("#hotkey-crop");
+const hotkeySelection = document.querySelector<HTMLElement>("#hotkey-selection");
+const hkPage = document.querySelector<HTMLElement>("#hk-page");
+const hkCrop = document.querySelector<HTMLElement>("#hk-crop");
+const hkSelection = document.querySelector<HTMLElement>("#hk-selection");
+const rebindPage = document.querySelector<HTMLButtonElement>("#rebind-page");
+const rebindCrop = document.querySelector<HTMLButtonElement>("#rebind-crop");
+const rebindSelection = document.querySelector<HTMLButtonElement>("#rebind-selection");
+const restoreShortcutsButton = document.querySelector<HTMLButtonElement>("#restore-shortcuts");
+const hkError = document.querySelector<HTMLElement>("#hk-error");
 const ocrButton = document.querySelector<HTMLButtonElement>("#screenshot-ocr");
 const ocrNote = document.querySelector<HTMLElement>("#ocr-note");
 const err = document.querySelector<HTMLElement>("#err");
@@ -74,7 +91,9 @@ if (
   !sourceSelect || !targetSelect ||
   !modeConfirm || !modeImmediate || !gestureToggle || !err || !errTitle || !errBody || !ok || !okTitle || !okBody ||
   !testButton || !saveButton || !rows || !termSource || !termTarget || !glossaryError ||
-  !homeSelection || !homeForce || !hotkeyPage || !hotkeyCrop || !ocrButton || !ocrNote
+  !homeSelection || !homeForce || !hotkeyPage || !hotkeyCrop || !hotkeySelection || !ocrButton || !ocrNote ||
+  !hkPage || !hkCrop || !hkSelection || !rebindPage || !rebindCrop || !rebindSelection ||
+  !restoreShortcutsButton || !hkError
 ) {
   throw new Error("设置页结构不完整");
 }
@@ -87,11 +106,25 @@ const ui = {
   sourceSelect, targetSelect,
   modeConfirm, modeImmediate, gestureToggle, err, errTitle, errBody, ok, okTitle, okBody, testButton, saveButton,
   rows, termSource, termTarget, glossaryError,
-  homeSelection, homeForce, hotkeyPage, hotkeyCrop, ocrButton, ocrNote,
+  homeSelection, homeForce, hotkeyPage, hotkeyCrop, hotkeySelection, ocrButton, ocrNote,
+  hkPage, hkCrop, hkSelection, rebindPage, rebindCrop, rebindSelection, restoreShortcutsButton, hkError,
 };
 
 fillSelect(ui.sourceSelect, SOURCE_LANGUAGES);
 fillSelect(ui.targetSelect, TARGET_LANGUAGES);
+
+let managedShortcuts: ManagedShortcuts = defaultShortcuts();
+let listeningShortcut: ShortcutId | null = null;
+const shortcutKeys: Record<ShortcutId, HTMLElement> = {
+  page: ui.hkPage,
+  crop: ui.hkCrop,
+  selection: ui.hkSelection,
+};
+const rebindButtons: Record<ShortcutId, HTMLButtonElement> = {
+  page: ui.rebindPage,
+  crop: ui.rebindCrop,
+  selection: ui.rebindSelection,
+};
 
 let openedAsTab = false;
 let glossaryFrom: "home" | "settings" = "settings";
@@ -113,6 +146,7 @@ chrome.tabs.getCurrent((tab) => {
 document.querySelector("#open-settings")?.addEventListener("click", () => showSettings());
 document.querySelector("#settings-link")?.addEventListener("click", () => showSettings());
 ui.backHome.addEventListener("click", () => {
+  stopRebind();
   showHome();
   startPoll();
 });
@@ -166,8 +200,11 @@ bindLang(ui.sourceSelect, "sourceLang");
 bindLang(ui.targetSelect, "targetLang");
 
 document.querySelector("#home-open-glossary")?.addEventListener("click", () => openGlossary("home"));
-void renderHotkeys();
 document.querySelector("#close-glossary")?.addEventListener("click", () => closeGlossary());
+for (const id of SHORTCUT_IDS) {
+  rebindButtons[id].addEventListener("click", () => startRebind(id));
+}
+ui.restoreShortcutsButton.addEventListener("click", () => restoreShortcutDefaults());
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local" || !changes[STORAGE_KEY]) return;
@@ -290,6 +327,9 @@ function applyShortcuts(settings: Settings): void {
   applyMode(settings.selectionMode);
   renderGlossary(settings.glossary);
   applyOcrAvailability(settings);
+  if (!listeningShortcut) managedShortcuts = { ...settings.shortcuts };
+  renderHotkeyTip(listeningShortcut ? managedShortcuts : settings.shortcuts);
+  renderShortcutRows();
 }
 
 function applyOcrAvailability(settings: Settings): void {
@@ -359,6 +399,7 @@ function patchSettings(patch: Partial<Settings>): Promise<void> {
 }
 
 function openGlossary(from: "home" | "settings"): void {
+  stopRebind();
   glossaryFrom = from;
   ui.homeView.hidden = true;
   ui.settingsView.hidden = true;
@@ -587,17 +628,85 @@ function clearBanners(): void {
   ui.ok.hidden = true;
 }
 
-async function renderHotkeys(): Promise<void> {
-  if (!chrome.commands?.getAll) return;
-  try {
-    const commands = await chrome.commands.getAll();
-    const page = commands.find((item) => item.name === PAGE_TRANSLATE_COMMAND)?.shortcut;
-    const crop = commands.find((item) => item.name === CROP_OCR_COMMAND)?.shortcut;
-    ui.hotkeyPage.textContent = page || "未设置";
-    ui.hotkeyCrop.textContent = crop || "未设置";
-  } catch {
-    // 静态文案就是建议键 Alt+T / Alt+S。
+function renderHotkeyTip(shortcuts: ManagedShortcuts): void {
+  ui.hotkeyPage.textContent = shortcuts.page;
+  ui.hotkeyCrop.textContent = shortcuts.crop;
+  ui.hotkeySelection.textContent = shortcuts.selection;
+}
+
+function renderShortcutRows(): void {
+  for (const id of SHORTCUT_IDS) {
+    const key = shortcutKeys[id];
+    const button = rebindButtons[id];
+    const row = button.closest(".hk-row");
+    const listening = listeningShortcut === id;
+    row?.classList.toggle("is-listening", listening);
+    button.disabled = listening;
+    if (listening) {
+      key.classList.add("listening");
+      key.textContent = "按下新组合键…（Esc 取消）";
+      key.removeAttribute("aria-label");
+    } else {
+      key.classList.remove("listening");
+      key.textContent = managedShortcuts[id];
+      key.setAttribute("aria-label", `当前键 ${managedShortcuts[id]}`);
+    }
   }
+}
+
+function startRebind(id: ShortcutId): void {
+  listeningShortcut = id;
+  window.removeEventListener("keydown", onRebindKey, true);
+  window.addEventListener("keydown", onRebindKey, true);
+  renderShortcutRows();
+}
+
+function stopRebind(): void {
+  listeningShortcut = null;
+  window.removeEventListener("keydown", onRebindKey, true);
+  renderShortcutRows();
+}
+
+function onRebindKey(event: KeyboardEvent): void {
+  if (!listeningShortcut) return;
+  event.preventDefault();
+  event.stopPropagation();
+  if (event.key === "Escape") {
+    clearShortcutError();
+    stopRebind();
+    return;
+  }
+  const chord = chordFromKey(event);
+  if (!chord) return;
+  const result = assignShortcut(managedShortcuts, listeningShortcut, formatChord(chord));
+  if (!result.ok) {
+    showShortcutError(result.message);
+    stopRebind();
+    return;
+  }
+  clearShortcutError();
+  managedShortcuts = result.shortcuts;
+  stopRebind();
+  renderHotkeyTip(managedShortcuts);
+  void patchSettings({ shortcuts: managedShortcuts });
+}
+
+function restoreShortcutDefaults(): void {
+  clearShortcutError();
+  managedShortcuts = defaultShortcuts();
+  stopRebind();
+  renderHotkeyTip(managedShortcuts);
+  void patchSettings({ shortcuts: defaultShortcuts() });
+}
+
+function showShortcutError(message: string): void {
+  ui.hkError.hidden = false;
+  ui.hkError.textContent = message;
+}
+
+function clearShortcutError(): void {
+  ui.hkError.hidden = true;
+  ui.hkError.textContent = "";
 }
 
 type PageCommand = "page-ai-start" | "page-ai-stop" | "page-ai-clear" | "page-ai-status";

@@ -6,6 +6,7 @@ import { mountPageGesture } from "./gesture.ts";
 import { clearInlinePage, initPage, isInlinePageOpen, pageStatus, startInlinePage, stopInlinePage, syncToolbarPair } from "./pageview.ts";
 import { closeSelectConfirm, currentSelectConfirmText, isSelectConfirmOpen, openSelectConfirm, repositionSelectConfirm } from "./select-confirm.ts";
 import { missingKeyNotice, type ShortcutAction } from "../lib/commands.ts";
+import { createShortcutGate, matchShortcut } from "../lib/shortcuts.ts";
 import type { PageControlStatus } from "../lib/inpage.ts";
 import type { ToPageMessage } from "../lib/messages.ts";
 import { cleanSelection, selectionOffer } from "../lib/selection.ts";
@@ -13,6 +14,7 @@ import { createForceSelect } from "../lib/force-select.ts";
 import { NO_VISION_OCR_MESSAGE, providerSupportsVision } from "../lib/providers.ts";
 import { STORAGE_KEY, defaultSettings, normalizeSettings, readSettings, writeSettings } from "../lib/settings.ts";
 import { isTargetLang } from "../lib/languages.ts";
+import { showSelectionToast } from "./toast.ts";
 
 const scope = globalThis as typeof globalThis & { __YIFAN_BOOTED__?: boolean };
 if (!scope.__YIFAN_BOOTED__) {
@@ -23,6 +25,8 @@ if (!scope.__YIFAN_BOOTED__) {
 function boot(): void {
   let settings = defaultSettings();
   let ready = false;
+  const acceptShortcut = createShortcutGate();
+  let toggleChain = Promise.resolve();
   // 必须先于 force-select 挂到 window，否则禁选开启时右键 mousedown 到不了后面的监听。
   mountPageGesture(document, {
     isEnabled: () => ready && settings.gestureEnabled,
@@ -83,6 +87,16 @@ function boot(): void {
     );
     return true;
   });
+
+  document.addEventListener("keydown", (event) => {
+    if (!ready || event.repeat || event.isComposing) return;
+    const action = matchShortcut(event, settings.shortcuts);
+    if (!action) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (!acceptShortcut(action)) return;
+    void runShortcutAction(action);
+  }, true);
 
   document.addEventListener("mousedown", (event) => {
     if (isYifanEvent(event)) return;
@@ -177,12 +191,27 @@ function boot(): void {
       if (title && body) await showNotice(title, body);
       return;
     }
+    if (message.type === "page-ai-start" && message.via === "command") {
+      if (!acceptShortcut("page")) return pageStatus();
+      await runShortcutAction("page");
+      return pageStatus();
+    }
     if (message.type === "show-page-ai" || message.type === "page-ai-start") {
       await beginPageTranslate();
       return pageStatus();
     }
+    if (message.type === "start-crop-ocr" && message.via === "command") {
+      if (!acceptShortcut("crop")) return;
+      await runShortcutAction("crop");
+      return;
+    }
     if (message.type === "start-crop-ocr") {
       await beginCrop();
+      return;
+    }
+    if (message.type === "toggle-selection") {
+      if (!acceptShortcut("selection")) return;
+      await runShortcutAction("selection");
       return;
     }
     if (message.type === "show-page-google") {
@@ -200,16 +229,37 @@ function boot(): void {
   }
 
   async function runShortcutAction(action: ShortcutAction): Promise<void> {
+    if (action === "selection") {
+      await toggleSelection();
+      return;
+    }
     if (!settings.apiKey.trim()) {
       const notice = missingKeyNotice(action);
       await showNotice(notice.title, notice.message);
       return;
     }
     if (action === "crop") {
-      beginCrop();
+      await beginCrop();
       return;
     }
     await beginPageTranslate();
+  }
+
+  async function toggleSelection(): Promise<void> {
+    const run = toggleChain.then(async () => {
+      const current = await readSettings().catch(() => settings);
+      const next = !current.selectionEnabled;
+      const updated = { ...current, selectionEnabled: next };
+      await writeSettings(updated);
+      settings = updated;
+      if (!next) {
+        closeSelectionFloat();
+        closeSelectConfirm();
+      }
+      showSelectionToast(next);
+    });
+    toggleChain = run.then(() => undefined, () => undefined);
+    await run;
   }
 
   async function beginPageTranslate(): Promise<void> {

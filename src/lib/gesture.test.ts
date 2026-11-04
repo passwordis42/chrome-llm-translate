@@ -7,6 +7,8 @@ import {
   PAGE_TRANSLATE_COMMAND,
   SUGGESTED_CROP_SHORTCUT,
   SUGGESTED_PAGE_SHORTCUT,
+  SUGGESTED_SELECTION_SHORTCUT,
+  TOGGLE_SELECTION_COMMAND,
   decideShortcut,
   missingKeyNotice,
   shortcutAction,
@@ -119,12 +121,28 @@ describe("corner gesture thresholds", () => {
       null,
     );
     assert.equal(
-      recognizeCornerGesture(elbow({ x: 80, y: 0 }, { x: 80, y: 140 }, { x: 0, y: 140 })),
+      recognizeCornerGesture(elbow({ x: 80, y: 140 }, { x: 80, y: 0 }, { x: 0, y: 0 })),
       null,
     );
     assert.equal(
       recognizeCornerGesture(elbow({ x: 0, y: 0 }, { x: 140, y: 0 }, { x: 200, y: 90 })),
       null,
+    );
+  });
+
+  it("maps ⌞ down-then-left to the selection toggle and leaves ⌝ / ⌟ in place", () => {
+    const span = T.minSegmentPx + 36;
+    assert.equal(
+      recognizeCornerGesture(elbow({ x: 0, y: 0 }, { x: span, y: 0 }, { x: span, y: span })),
+      "page",
+    );
+    assert.equal(
+      recognizeCornerGesture(elbow({ x: 0, y: 0 }, { x: 0, y: span }, { x: span, y: span })),
+      "crop",
+    );
+    assert.equal(
+      recognizeCornerGesture(elbow({ x: span, y: 0 }, { x: span, y: span }, { x: 0, y: span })),
+      "selection",
     );
   });
 
@@ -215,25 +233,30 @@ describe("corner gesture pointer handling", () => {
 });
 
 describe("shortcut commands", () => {
-  it("registers Alt+T and Alt+S as suggested keys", () => {
+  it("registers Alt+T, Alt+S and Alt+E as suggested keys", () => {
     const manifest = JSON.parse(readFileSync(new URL("../manifest.json", import.meta.url), "utf8")) as {
       version: string;
       permissions: string[];
       commands: Record<string, { description: string; suggested_key: { default: string; mac?: string } }>;
     };
-    assert.equal(manifest.version, "0.1.9");
+    assert.equal(manifest.version, "0.1.10");
     assert.equal(manifest.permissions.includes("notifications"), true);
     const page = manifest.commands[PAGE_TRANSLATE_COMMAND];
     const crop = manifest.commands[CROP_OCR_COMMAND];
-    assert.ok(page && crop);
+    const selection = manifest.commands[TOGGLE_SELECTION_COMMAND];
+    assert.ok(page && crop && selection);
     assert.equal(page?.suggested_key.default, SUGGESTED_PAGE_SHORTCUT);
     assert.equal(page?.suggested_key.mac, SUGGESTED_PAGE_SHORTCUT);
     assert.equal(crop?.suggested_key.default, SUGGESTED_CROP_SHORTCUT);
     assert.equal(crop?.suggested_key.mac, SUGGESTED_CROP_SHORTCUT);
+    assert.equal(selection?.suggested_key.default, SUGGESTED_SELECTION_SHORTCUT);
+    assert.equal(selection?.suggested_key.mac, SUGGESTED_SELECTION_SHORTCUT);
     assert.match(page?.description ?? "", /整页/);
     assert.match(crop?.description ?? "", /识译|截图/);
+    assert.match(selection?.description ?? "", /划词/);
     assert.equal(shortcutAction(PAGE_TRANSLATE_COMMAND), "page");
     assert.equal(shortcutAction(CROP_OCR_COMMAND), "crop");
+    assert.equal(shortcutAction(TOGGLE_SELECTION_COMMAND), "selection");
     assert.equal(shortcutAction("_execute_action"), null);
   });
 
@@ -269,6 +292,22 @@ describe("shortcut commands", () => {
     assert.equal(ready?.deliver, true);
     assert.equal(ready?.notice, null);
     assert.equal(decideShortcut({ command: "unknown", url: "https://example.com", hasApiKey: true }), null);
+
+    const toggle = decideShortcut({
+      command: TOGGLE_SELECTION_COMMAND,
+      url: "https://example.com/article",
+      hasApiKey: false,
+    });
+    assert.equal(toggle?.action, "selection");
+    assert.equal(toggle?.deliver, true);
+    assert.equal(toggle?.notice, null);
+    const blockedToggle = decideShortcut({
+      command: TOGGLE_SELECTION_COMMAND,
+      url: "chrome://extensions/",
+      hasApiKey: true,
+    });
+    assert.equal(blockedToggle?.deliver, false);
+    assert.match(blockedToggle?.notice?.message ?? "", /不能切换划词/);
   });
 
   it("defaults mouse gestures on and keeps the shortcut wiring in the extension", () => {
@@ -281,6 +320,7 @@ describe("shortcut commands", () => {
 
     const background = readFileSync(new URL("../background/index.ts", import.meta.url), "utf8");
     const content = readFileSync(new URL("../content/index.ts", import.meta.url), "utf8");
+    const toast = readFileSync(new URL("../content/toast.ts", import.meta.url), "utf8");
     const gestureAt = content.indexOf("mountPageGesture(document");
     const forceAt = content.indexOf("createForceSelect(document");
     assert.ok(gestureAt >= 0 && forceAt > gestureAt);
@@ -291,8 +331,14 @@ describe("shortcut commands", () => {
     assert.match(content, /attachCornerGesture|mountPageGesture/);
     assert.match(content, /gestureEnabled/);
     assert.match(content, /shortcut-notice/);
+    assert.match(content, /matchShortcut/);
+    assert.match(content, /showSelectionToast/);
+    assert.match(toast, /划词已关/);
+    assert.match(toast, /划词已开/);
     assert.match(popup, /Alt\+T/);
     assert.match(popup, /Alt\+S/);
+    assert.match(popup, /Alt\+E/);
+    assert.equal(popup.includes("未设置"), false);
     assert.match(popup, /启用鼠标手势/);
     const home = popup.slice(popup.indexOf('id="home-view"'), popup.indexOf('id="settings-view"'));
     const settings = popup.slice(popup.indexOf('id="settings-view"'), popup.indexOf('id="glossary-view"'));

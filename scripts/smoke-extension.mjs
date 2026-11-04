@@ -25,6 +25,7 @@ const context = await chromium.launchPersistentContext(profile, {
   args: [
     `--disable-extensions-except=${dist}`,
     `--load-extension=${dist}`,
+    "--disable-features=DisableLoadExtensionCommandLineSwitch",
     "--no-first-run",
     "--disable-default-apps",
     "--disable-sync",
@@ -33,9 +34,9 @@ const context = await chromium.launchPersistentContext(profile, {
   ],
 });
 
-const fail = (message) => {
+function fail(message) {
   throw new Error(message);
-};
+}
 
 try {
   let sw = context.serviceWorkers()[0];
@@ -259,6 +260,8 @@ try {
   await page.keyboard.press("Escape");
   await page.locator("#yifan-ocr").waitFor({ state: "detached", timeout: 3000 });
 
+  await exerciseShortcuts(page, sw, tabId);
+
   await sw.evaluate(async () => chrome.storage.local.remove("yifan.settings.v1"));
   const popup = await context.newPage();
   await popup.goto(`chrome-extension://${extensionId}/popup.html`);
@@ -274,10 +277,19 @@ try {
   if (await popup.locator("#home-target-lang").count()) fail("主弹窗不该再放目标语言");
   if (await popup.locator("#home-mode-confirm").count()) fail("主弹窗不该再放划词模式");
   await popup.locator("#hotkey-tip").waitFor();
+  const tip = (await popup.locator("#hotkey-tip").innerText()).replace(/\s+/g, " ");
+  if (!tip.includes("Alt+T") || !tip.includes("Alt+S") || !tip.includes("Alt+E") || !tip.includes("⌞")) {
+    fail(`tip 没有三键和三角手势: ${tip}`);
+  }
+  if (tip.includes("未设置")) fail(`tip 出现了未设置: ${tip}`);
   await popup.getByRole("button", { name: "设置", exact: true }).click();
   await popup.getByRole("heading", { name: "设置" }).waitFor();
   const gestureOn = await popup.locator("#gesture-toggle").getAttribute("aria-checked");
   if (gestureOn !== "true") fail("鼠标手势默认应开启");
+  const gestureDesc = await popup.locator("#gesture-row .t-desc").innerText();
+  if (!gestureDesc.includes("⌞") || !gestureDesc.includes("划词开/关")) fail(`手势说明不对: ${gestureDesc}`);
+  if (await popup.locator("#settings-view #home-selection-toggle").count()) fail("设置页不该镜像划词开关");
+  await exerciseRebind(popup);
   await popup.locator("#target-lang").selectOption("ja");
   await popup.waitForTimeout(300);
   const picked = await sw.evaluate(async () => {
@@ -317,6 +329,7 @@ try {
   await popup.getByRole("button", { name: "保存" }).click();
   await popup.getByText("已保存").waitFor();
 
+  await popup.getByRole("button", { name: "返回主弹窗" }).click();
   await popup.getByRole("button", { name: /术语本/ }).click();
   await popup.getByRole("heading", { name: "术语本" }).waitFor();
   await popup.locator("#term-source").fill("floating card");
@@ -340,6 +353,111 @@ try {
 } finally {
   await context.close();
   server.close();
+}
+
+async function exerciseShortcuts(page, sw, tabId) {
+  await selectSample(page, "#sample");
+  await page.locator("#yifan-select-confirm").waitFor({ timeout: 5000 });
+  await page.keyboard.press("Alt+E");
+  await page.waitForFunction((id) => window.shadowPlain(id).includes("划词已关"), "yifan-toast");
+  await page.locator("#yifan-select-confirm").waitFor({ state: "detached", timeout: 3000 });
+  await selectSample(page, "#second");
+  await page.waitForTimeout(400);
+  if (await page.locator("#yifan-select-confirm").count()) fail("Alt+E 关掉划词后仍出确认条");
+  if (await page.locator("#yifan-float").count()) fail("Alt+E 关掉划词后仍出浮层");
+
+  const running = sw.evaluate((id) => chrome.tabs.sendMessage(id, { type: "page-ai-start" }), tabId);
+  await page.locator("#yifan-inline-bar").waitFor({ timeout: 5000 });
+  await page.keyboard.press("Alt+E");
+  await page.waitForFunction((id) => window.shadowPlain(id).includes("划词已开"), "yifan-toast");
+  if (!(await page.locator("#yifan-inline-bar").count())) fail("划词开关打断了整页翻译");
+  await page.locator("#yifan-inline-bar").getByRole("button", { name: "清除译文" }).click();
+  await page.locator("#yifan-inline-bar").waitFor({ state: "detached", timeout: 3000 });
+  await running;
+
+  await dragCorner(page, "page");
+  await page.locator("#yifan-dialog").waitFor({ timeout: 5000 });
+  const pageNotice = await shadowText(page, "yifan-dialog");
+  if (!pageNotice.includes("API Key")) fail(`⌝ 没有走到整页: ${pageNotice}`);
+  await page.locator("#yifan-dialog").getByRole("button", { name: "关闭" }).click();
+  await page.locator("#yifan-dialog").waitFor({ state: "detached", timeout: 3000 });
+
+  await dragCorner(page, "selection");
+  await page.waitForFunction((id) => window.shadowPlain(id).includes("划词已关"), "yifan-toast");
+  const afterCorner = await readSelectionEnabled(sw);
+  if (afterCorner !== false) fail("⌞ 没有关掉划词");
+  await page.locator("#yifan-toast").waitFor({ state: "detached", timeout: 3000 });
+
+  await sw.evaluate(async () => {
+    const bag = await chrome.storage.local.get("yifan.settings.v1");
+    const current = bag["yifan.settings.v1"];
+    current.gestureEnabled = false;
+    current.selectionEnabled = true;
+    await chrome.storage.local.set({ "yifan.settings.v1": current });
+  });
+  await page.waitForTimeout(250);
+  for (const kind of ["selection", "page", "crop"]) {
+    await dragCorner(page, kind);
+    await page.waitForTimeout(250);
+    if (await page.locator("#yifan-toast").count()) fail(`关掉手势后 ${kind} 仍出划词提示`);
+    if (await page.locator("#yifan-inline-bar").count()) fail(`关掉手势后 ${kind} 仍触发整页`);
+    if (await page.locator("#yifan-crop").count()) fail(`关掉手势后 ${kind} 仍触发识译`);
+    if (await page.locator("#yifan-dialog").count()) fail(`关掉手势后 ${kind} 仍弹出说明`);
+    await page.keyboard.press("Escape");
+  }
+  if ((await readSelectionEnabled(sw)) !== true) fail("关掉手势后划词开关被改了");
+  await page.keyboard.press("Alt+E");
+  await page.waitForFunction((id) => window.shadowPlain(id).includes("划词已关"), "yifan-toast");
+  if ((await readSelectionEnabled(sw)) !== false) fail("关掉手势后 Alt+E 也不再翻转划词");
+}
+
+async function exerciseRebind(popup) {
+  if ((await popup.locator("#hk-page").innerText()) !== "Alt+T") fail("整页默认键不是 Alt+T");
+  if ((await popup.locator("#hk-crop").innerText()) !== "Alt+S") fail("识译默认键不是 Alt+S");
+  if ((await popup.locator("#hk-selection").innerText()) !== "Alt+E") fail("划词默认键不是 Alt+E");
+  await popup.locator("#rebind-crop").click();
+  await popup.locator("#hk-crop.listening").waitFor();
+  const listening = await popup.locator("#hk-crop").innerText();
+  if (!listening.includes("按下新组合键")) fail(`改键态不对: ${listening}`);
+  await popup.keyboard.press("Escape");
+  if ((await popup.locator("#hk-crop").innerText()) !== "Alt+S") fail("Esc 取消后识译键丢了");
+  await popup.locator("#rebind-crop").click();
+  await popup.locator("#hk-crop.listening").waitFor();
+  await popup.keyboard.press("Alt+T");
+  await popup.locator("#hk-error").waitFor();
+  const conflict = await popup.locator("#hk-error").innerText();
+  if (!conflict.includes("整页开始/继续") || !conflict.includes("没有改掉当前键")) fail(`冲突提示不对: ${conflict}`);
+  if ((await popup.locator("#hk-crop").innerText()) !== "Alt+S") fail("冲突后识译键被改掉了");
+  await popup.locator("#rebind-selection").click();
+  await popup.locator("#hk-selection.listening").waitFor();
+  await popup.keyboard.press("Control+Shift+Y");
+  await popup.locator("#hk-selection").filter({ hasText: "Ctrl+Shift+Y" }).waitFor();
+  const tipped = await popup.locator("#hotkey-selection").textContent();
+  if (tipped !== "Ctrl+Shift+Y") fail(`tip 没有跟着改键: ${tipped}`);
+  if ((await popup.locator("#hotkey-tip").textContent())?.includes("未设置")) fail("改键后 tip 出现未设置");
+  await popup.locator("#restore-shortcuts").click();
+  await popup.locator("#hk-selection").filter({ hasText: "Alt+E" }).waitFor();
+  if ((await popup.locator("#hk-page").innerText()) !== "Alt+T") fail("恢复默认后整页键不对");
+  if ((await popup.locator("#hk-crop").innerText()) !== "Alt+S") fail("恢复默认后识译键不对");
+  if ((await popup.locator("#hotkey-selection").textContent()) !== "Alt+E") fail("恢复默认后 tip 没有回到 Alt+E");
+}
+
+async function readSelectionEnabled(sw) {
+  return sw.evaluate(async () => {
+    const bag = await chrome.storage.local.get("yifan.settings.v1");
+    return bag["yifan.settings.v1"]?.selectionEnabled;
+  });
+}
+
+async function dragCorner(page, kind) {
+  const start = { x: 460, y: 200 };
+  const corner = kind === "page" ? { x: 640, y: 200 } : { x: 460, y: 380 };
+  const end = kind === "page" ? { x: 640, y: 380 } : kind === "crop" ? { x: 660, y: 380 } : { x: 260, y: 380 };
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down({ button: "right" });
+  await page.mouse.move(corner.x, corner.y, { steps: 12 });
+  await page.mouse.move(end.x, end.y, { steps: 12 });
+  await page.mouse.up({ button: "right" });
 }
 
 async function shadowText(page, id) {

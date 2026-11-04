@@ -511,3 +511,35 @@ img { display: block; }
 @media (max-width: 720px) {
   .toolbar { align-items: flex-start; flex-direction: column; }
 }
+
+:host(#yifan-toast) {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  width: auto;
+  height: auto;
+  pointer-events: none;
+}
+:host(#yifan-toast.above-bar) { bottom: 88px; }
+.toast {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 16px;
+  border-radius: 999px;
+  background: rgba(44, 42, 38, 0.92);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: 0 8px 24px rgba(40, 36, 28, 0.22);
+  white-space: nowrap;
+}
+.toast .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #f97066;
+  flex-shrink: 0;
+}
+.toast.on .dot { background: #32d583; }

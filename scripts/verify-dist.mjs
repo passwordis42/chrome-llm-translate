@@ -10,9 +10,10 @@ function check(condition, message) {
 
 check(manifest.manifest_version === 3, "manifest_version");
 check(manifest.name === "一翻", "name");
-check(manifest.version === "0.1.9", "version");
+check(manifest.version === "0.1.10", "version");
 check(manifest.commands?.["start-page-translate"]?.suggested_key?.default === "Alt+T", "page shortcut");
 check(manifest.commands?.["start-crop-ocr"]?.suggested_key?.default === "Alt+S", "crop shortcut");
+check(manifest.commands?.["toggle-selection"]?.suggested_key?.default === "Alt+E", "selection shortcut");
 check(manifest.permissions?.includes("notifications"), "notification permission");
 check(manifest.content_scripts?.[0]?.run_at === "document_start", "content script starts early enough to beat select bans");
 check(manifest.background?.service_worker === "background.js", "service worker");
@@ -79,12 +80,14 @@ check(popup.includes("允许划选被禁文字，已关闭"), "force-select clos
 check(popup.includes('id="home-view"'), "home view");
 const home = popup.slice(popup.indexOf('id="home-view"'), popup.indexOf('id="settings-view"'));
 const settings = popup.slice(popup.indexOf('id="settings-view"'), popup.indexOf('id="glossary-view"'));
-check(home.includes("快捷") && home.includes("截图识译") && home.includes("Alt+T") && home.includes("Alt+S"), "home shortcuts");
+check(home.includes("快捷") && home.includes("截图识译") && home.includes("Alt+T") && home.includes("Alt+S") && home.includes("Alt+E") && home.includes("⌞"), "home shortcuts");
+check(!home.includes("未设置") && !popup.includes("未设置"), "tip does not say unset");
 check(!home.includes("先确认再翻") && !home.includes("源语言"), "home has no language or selection mode");
 check(!home.includes("api-key") && !home.includes("qwen3.7-plus") && !home.includes('id="model"'), "home has no key or model");
 check(settings.includes("划词模式") && settings.includes("启用鼠标手势") && settings.includes("源语言"), "settings owns language, mode, gesture");
+check(settings.includes("恢复默认") && settings.includes("划词翻译开/关") && settings.includes("以扩展内设置为准") && settings.includes("⌞"), "settings rebind and gesture copy");
 check(!settings.includes('id="selection-toggle"') && !settings.includes('id="force-select-toggle"') && !settings.includes('id="open-glossary"'), "settings does not mirror home toggles");
-check(!settings.includes("Alt+T"), "settings does not repeat the hotkey tip");
+check(!settings.includes('id="home-selection-toggle"'), "settings does not host the selection switch");
 check(popup.includes('id="start-page"') && popup.includes('id="stop-page"') && popup.includes('id="clear-page"'), "start stop clear");
 check(popup.includes('id="back-home"'), "settings back");
 check(popup.includes("返回主弹窗"), "settings back label");
@@ -108,10 +111,11 @@ check(background.includes("框选识译…"), "crop context menu");
 check(background.includes("captureVisibleTab"), "visible tab capture");
 check(background.includes("qwen3-vl-plus"), "default vision model");
 check(background.includes("没有跳转到 translate.google.com"), "google failure stays on the page");
-check(background.includes("start-page-translate") && background.includes("start-crop-ocr"), "shortcut command ids");
+check(background.includes("start-page-translate") && background.includes("start-crop-ocr") && background.includes("toggle-selection"), "shortcut command ids");
 check(background.includes("不能整页翻译") && background.includes("请先在设置中填写 API Key"), "shortcut failure copy");
 const contentBundle = content;
 check(contentBundle.includes("gestureEnabled"), "gesture setting reaches the page");
+check(contentBundle.includes("划词已开") && contentBundle.includes("划词已关"), "selection toast copy");
 check(!background.includes("chrome.tabs.update"), "background does not navigate tabs");
 check(!background.includes("translate.google.com/translate"), "no google translate navigation url");
 

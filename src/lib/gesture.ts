@@ -17,7 +17,7 @@ export const GESTURE_THRESHOLDS = {
 
 export type GestureThresholds = typeof GESTURE_THRESHOLDS;
 
-export type GestureAction = "page" | "crop";
+export type GestureAction = "page" | "crop" | "selection";
 
 export interface Point {
   x: number;
@@ -29,6 +29,7 @@ type Cardinal = "right" | "left" | "down" | "up";
 /**
  * ⌝ 先右再下 → 整页开始/继续。
  * ⌟ 先下再右 → 截图识译。
+ * ⌞ 先下再左 → 划词开/关。
  * 方向反了、直线、夹角不够、任一段太短、多于一个拐角 → null。
  */
 export function recognizeCornerGesture(
@@ -72,6 +73,7 @@ export function recognizeCornerGesture(
   const second = cardinal(corner, end, thresholds.axisDominance);
   if (first === "right" && second === "down") return "page";
   if (first === "down" && second === "right") return "crop";
+  if (first === "down" && second === "left") return "selection";
   return null;
 }
 
