@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "一翻",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "用你自己的 API Key 做划词与整页翻译。支持千问、OpenAI、火山方舟、DeepSeek 和 Kimi。划词默认先确认；译文原位替换；无视觉能力时识译会明确禁用。谷歌不跳转。进页不自动翻。",
   "minimum_chrome_version": "116",
   "icons": {
