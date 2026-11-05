@@ -7,12 +7,26 @@ import {
   normalizeRect,
   type CssRect,
 } from "../lib/ocr.ts";
+import {
+  OCR_PANEL_MARGIN,
+  createOcrPanelSession,
+  defaultOcrPanelWidth,
+  mountOcrPanel,
+  ocrPanelPhase,
+  refitOcrPanel,
+  type OcrInsets,
+  type OcrPanelBlock,
+  type OcrPanelBox,
+  type OcrPanelMount,
+} from "../lib/ocr-panel.ts";
 import { copyText, el, markImg, mount } from "./dom.ts";
 
 let session = 0;
 let busy = false;
 let cropHost: HTMLDivElement | null = null;
 let panelHost: HTMLDivElement | null = null;
+const ocrSession = createOcrPanelSession();
+let viewportClamp: (() => void) | null = null;
 
 export function isOcrUiActive(): boolean {
   return busy || cropHost?.isConnected === true || panelHost?.isConnected === true;
@@ -26,6 +40,7 @@ export function dismissOcrUi(): boolean {
   if (!isOcrUiActive()) return false;
   session += 1;
   busy = false;
+  resetOcrPanelSession();
   cropHost?.remove();
   panelHost?.remove();
   cropHost = null;
@@ -37,6 +52,7 @@ export function startCrop(): void {
   session += 1;
   const token = session;
   busy = false;
+  resetOcrPanelSession();
   cropHost?.remove();
   panelHost?.remove();
   cropHost = null;
@@ -180,71 +196,85 @@ function showPanel(
     const mounted = mount("yifan-ocr");
     panelHost = mounted.host;
     mounted.host.setAttribute("role", "dialog");
-    mounted.host.setAttribute("aria-label", "截图识译结果");
-    placePanel(mounted.host);
   }
-  const root = panelHost.shadowRoot;
+  const host = panelHost;
+  const root = host.shadowRoot;
   if (!root) return;
-  const existing = root.querySelector(".ocr-panel");
-  existing?.remove();
+  root.querySelector(".ocr-panel")?.remove();
 
-  const panel = el("div", "ocr-panel");
-  const head = el("div", "ocr-hd");
-  const title = el("h2", undefined, OCR_PANEL_TITLE);
-  const close = el("button", "close", "×");
-  close.type = "button";
-  close.setAttribute("aria-label", "关闭");
-  close.addEventListener("click", () => dismissOcrUi());
-  head.append(markImg(22), title, close);
+  const phase = ocrPanelPhase(state.loading === true);
+  host.setAttribute("aria-label", phase === "loading" ? "截图识译加载中" : "截图识译结果");
+  if (phase === "loading") host.setAttribute("aria-busy", "true");
+  else host.removeAttribute("aria-busy");
 
-  const body = el("div", "ocr-body");
-  const thumb = el("div", "thumb");
-  if (state.thumb) {
-    const image = document.createElement("img");
-    image.alt = "";
-    image.src = state.thumb;
-    thumb.append(image);
+  if (phase === "loading") {
+    resetOcrPanelSession();
+    clearPanelFrame(host);
+    placePanel(host);
   }
-  thumb.append(el("span", undefined, `选区缩略 · ${state.width}×${state.height}`));
-  body.append(thumb);
 
   const sourceText = state.source?.trim() ?? "";
   const translation = state.translation?.trim() ?? "";
-  if (state.loading) {
-    body.append(block("识别原文", "正在识字…", false));
-    body.append(block("译文", "正在翻译…", true));
-  } else if (state.error) {
-    if (sourceText) body.append(block("识别原文", sourceText, false));
-    const err = el("div", "err");
-    err.append(el("strong", undefined, state.errorTitle || "识译失败"), document.createTextNode(state.error));
-    body.append(err);
+  const blocks: OcrPanelBlock[] = [];
+  if (phase === "ready" && sourceText) blocks.push({ label: "识别原文", text: sourceText, translated: false });
+  if (phase === "ready" && !state.error) blocks.push({ label: "译文", text: translation, translated: true });
+
+  const mountedPanel = mountOcrPanel(document, {
+    phase,
+    title: OCR_PANEL_TITLE,
+    iconUrl: chrome.runtime.getURL("icons/icon128.png"),
+    thumbSrc: phase === "ready" ? state.thumb : undefined,
+    thumbLabel: phase === "ready" ? `选区缩略 · ${state.width}×${state.height}` : undefined,
+    blocks,
+    errorTitle: state.errorTitle,
+    error: phase === "ready" ? state.error : undefined,
+    privacy: phase === "ready" ? CROP_PRIVACY : undefined,
+    sourceEnabled: Boolean(sourceText),
+    translationEnabled: Boolean(translation),
+    copySourceLabel: "复制原文",
+    copyTranslationLabel: "复制译文",
+  }, {
+    getLayout: () => ocrSession.current(),
+    viewport,
+    insets: panelInsets,
+    onLayout: (layout) => {
+      ocrSession.commit(layout);
+      applyPanelFrame(host, layout.box);
+    },
+    onClose: () => dismissOcrUi(),
+    onCopySource: (button) => {
+      void flashCopy(button, sourceText);
+    },
+    onCopyTranslation: (button) => {
+      void flashCopy(button, translation);
+    },
+  });
+  root.append(mountedPanel.element);
+
+  if (phase !== "ready") return;
+  if (!ocrSession.current()) {
+    const insets = panelInsets();
+    const width = defaultOcrPanelWidth(viewport(), insets);
+    host.style.width = `${width}px`;
+    host.style.height = "auto";
+    host.style.left = "auto";
+    host.style.top = "auto";
+    host.style.right = `${insets.right}px`;
+    host.style.bottom = `${insets.bottom}px`;
+    mountedPanel.element.style.height = "auto";
+    const measured = Math.max(host.getBoundingClientRect().height, mountedPanel.element.scrollHeight);
+    mountedPanel.element.style.height = "";
+    const layout = ocrSession.open(viewport(), measured, insets);
+    applyPanelFrame(host, layout.box);
+    mountedPanel.apply(layout);
   } else {
-    body.append(block("识别原文", sourceText, false));
-    body.append(block("译文", translation, true));
+    const layout = ocrSession.current();
+    if (layout) {
+      applyPanelFrame(host, layout.box);
+      mountedPanel.apply(layout);
+    }
   }
-
-  const actions = el("div", "ocr-actions");
-  const copySource = el("button", "btn", "复制原文");
-  copySource.type = "button";
-  copySource.disabled = !sourceText;
-  copySource.addEventListener("click", () => void flashCopy(copySource, sourceText));
-  const copyTranslation = el("button", "btn primary", "复制译文");
-  copyTranslation.type = "button";
-  copyTranslation.disabled = !translation;
-  copyTranslation.addEventListener("click", () => void flashCopy(copyTranslation, translation));
-  const dismiss = el("button", "btn", "关闭");
-  dismiss.type = "button";
-  dismiss.addEventListener("click", () => dismissOcrUi());
-  actions.append(copySource, copyTranslation, dismiss);
-  body.append(actions, el("p", "ocr-privacy", CROP_PRIVACY));
-  panel.append(head, body);
-  root.append(panel);
-}
-
-function block(label: string, text: string, translated: boolean): HTMLDivElement {
-  const node = el("div", translated ? "ocr-block trans" : "ocr-block");
-  node.append(el("div", "blabel", label), el("div", "btext", text));
-  return node;
+  bindViewportClamp(host, mountedPanel);
 }
 
 async function flashCopy(button: HTMLButtonElement, text: string): Promise<void> {
@@ -272,10 +302,56 @@ function liftAboveToolbar(node: HTMLElement, bottom: number): void {
 }
 
 function placePanel(host: HTMLElement): void {
+  host.style.bottom = `${panelInsets().bottom}px`;
+}
+
+function panelInsets(): OcrInsets {
   const bar = document.getElementById("yifan-inline-bar");
-  if (!bar) return;
-  const height = bar.getBoundingClientRect().height;
-  if (height > 0) host.style.bottom = `${Math.ceil(height) + 24}px`;
+  const height = bar?.getBoundingClientRect().height ?? 0;
+  const bottom = height > 0 ? Math.ceil(height) + 24 : OCR_PANEL_MARGIN;
+  return { top: OCR_PANEL_MARGIN, right: OCR_PANEL_MARGIN, bottom, left: OCR_PANEL_MARGIN };
+}
+
+function applyPanelFrame(host: HTMLElement, box: OcrPanelBox): void {
+  host.style.left = `${box.left}px`;
+  host.style.top = `${box.top}px`;
+  host.style.right = "auto";
+  host.style.bottom = "auto";
+  host.style.width = `${box.width}px`;
+  host.style.height = `${box.height}px`;
+}
+
+function clearPanelFrame(host: HTMLElement): void {
+  host.style.left = "";
+  host.style.top = "";
+  host.style.right = "";
+  host.style.bottom = "";
+  host.style.width = "";
+  host.style.height = "";
+}
+
+function bindViewportClamp(host: HTMLElement, mountedPanel: OcrPanelMount): void {
+  unbindViewportClamp();
+  viewportClamp = () => {
+    const layout = ocrSession.current();
+    if (!layout || !host.isConnected) return;
+    const next = refitOcrPanel(layout, viewport(), panelInsets());
+    ocrSession.commit(next);
+    applyPanelFrame(host, next.box);
+    mountedPanel.apply(next);
+  };
+  window.addEventListener("resize", viewportClamp);
+}
+
+function unbindViewportClamp(): void {
+  if (!viewportClamp) return;
+  window.removeEventListener("resize", viewportClamp);
+  viewportClamp = null;
+}
+
+function resetOcrPanelSession(): void {
+  ocrSession.close();
+  unbindViewportClamp();
 }
 
 function viewport(): { width: number; height: number } {
