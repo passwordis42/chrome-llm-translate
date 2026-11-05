@@ -257,6 +257,8 @@ describe("ocr panel element", () => {
     const panel = mounted.element;
     assert.equal(panel.dataset.phase, "loading");
     assert.equal(panel.querySelector(".handle"), null);
+    assert.equal(panel.classList.contains("is-hover"), false);
+    assert.equal(panel.classList.contains("is-resizing"), false);
     assert.equal(panel.querySelector(".zoom-btn"), null);
     assert.equal(panel.querySelector(".fs-btn"), null);
     assert.equal(panel.querySelector(".drag-hint"), null);
@@ -275,6 +277,7 @@ describe("ocr panel element", () => {
     const ui = harness("ready");
     const panel = ui.mounted.element;
     assert.equal(panel.querySelectorAll(".handle").length, 8);
+    assert.equal(panel.classList.contains("is-hover"), false);
     assert.equal(panel.querySelector(".zoom-btn")?.textContent, "放大");
     assert.equal(panel.querySelector(".fs-range")?.textContent, "12–22");
     assert.equal(panel.dataset.font, "13");
@@ -343,6 +346,86 @@ describe("ocr panel element", () => {
     assert.equal(ui.closed, 1);
     assert.equal(ui.document.documentElement.style.fontSize, "");
     assert.equal(ui.document.querySelector("h2")?.getAttribute("style"), null);
+    assert.equal(panel.classList.contains("is-hover"), false);
+  });
+
+  it("keeps resize handles invisible until an edge or corner is hovered, and while a drag is active", () => {
+    const ui = harness("ready");
+    const panel = ui.mounted.element;
+    const handles = [...panel.querySelectorAll<HTMLElement>(".handle")];
+    assert.equal(handles.length, 8);
+    assert.equal(panel.classList.contains("is-hover"), false);
+    assert.equal(panel.classList.contains("is-resizing"), false);
+    for (const handle of handles) {
+      assert.equal(handle.hidden, false);
+      assert.equal(handle.style.pointerEvents, "");
+      assert.equal(handle.getAttribute("aria-hidden"), "true");
+      assert.ok(handle.dataset.edge);
+    }
+
+    const east = panel.querySelector<HTMLElement>(".handle.e");
+    const west = panel.querySelector<HTMLElement>(".handle.w");
+    assert.ok(east && west);
+    east.dispatchEvent(new ui.window.Event("pointerenter"));
+    assert.equal(panel.classList.contains("is-hover"), true);
+    assert.equal(panel.classList.contains("is-resizing"), false);
+    west.dispatchEvent(new ui.window.Event("pointerenter"));
+    east.dispatchEvent(new ui.window.Event("pointerleave"));
+    assert.equal(panel.classList.contains("is-hover"), true);
+    west.dispatchEvent(new ui.window.Event("pointerleave"));
+    assert.equal(panel.classList.contains("is-hover"), false);
+
+    const widthBefore = ui.layout?.box.width ?? 0;
+    const leftBefore = ui.layout?.box.left ?? 0;
+    west.dispatchEvent(point(ui.window, "pointerdown", 100, 20));
+    assert.equal(panel.classList.contains("is-hover"), true);
+    assert.equal(panel.classList.contains("is-resizing"), true);
+    west.dispatchEvent(new ui.window.Event("pointerleave"));
+    ui.window.dispatchEvent(point(ui.window, "pointermove", 64, 20));
+    assert.equal(panel.classList.contains("is-hover"), true);
+    assert.equal(panel.classList.contains("is-resizing"), true);
+    assert.equal(ui.layout?.box.width, widthBefore + 36);
+    assert.equal(ui.layout?.box.left, leftBefore - 36);
+    ui.window.dispatchEvent(point(ui.window, "pointerup", 64, 20));
+    assert.equal(panel.classList.contains("is-hover"), false);
+    assert.equal(panel.classList.contains("is-resizing"), false);
+    assert.equal(ui.layout?.box.width, widthBefore + 36);
+
+    const title = panel.querySelector("h2");
+    assert.ok(title);
+    title.dispatchEvent(point(ui.window, "pointerdown", 80, 40));
+    ui.window.dispatchEvent(point(ui.window, "pointermove", 60, 30));
+    ui.window.dispatchEvent(point(ui.window, "pointerup", 60, 30));
+    assert.equal(panel.classList.contains("is-hover"), false);
+    assert.equal(panel.classList.contains("is-resizing"), false);
+    assert.equal(panel.querySelectorAll(".handle").length, 8);
+
+    panel.querySelector<HTMLButtonElement>(".zoom-btn")?.click();
+    assert.equal(ui.layout?.enlarged, true);
+    assert.equal(panel.classList.contains("is-hover"), false);
+    assert.equal(panel.querySelectorAll(".handle").length, 8);
+  });
+
+  it("paints result handles only while hovered or resizing and does not shrink their hit area", () => {
+    const css = readFileSync(new URL("../content/content.css", import.meta.url), "utf8");
+    const hidden = css.match(/\.ocr-panel\.ready \.handle\s*\{[^}]*\}/)?.[0] ?? "";
+    const shown = css.match(/\.ocr-panel\.ready\.is-hover \.handle,\s*\.ocr-panel\.ready\.is-resizing \.handle\s*\{[^}]*\}/)?.[0] ?? "";
+    assert.match(hidden, /opacity:\s*0/);
+    assert.match(hidden, /transition:\s*opacity 120ms ease/);
+    assert.equal(hidden.includes("pointer-events"), false);
+    assert.equal(hidden.includes("visibility"), false);
+    assert.equal(hidden.includes("display"), false);
+    assert.match(shown, /opacity:\s*1/);
+    assert.match(css, /\.handle::before\s*\{[^}]*inset:\s*-6px/);
+    assert.match(css, /\.handle\.n\s*\{[^}]*width:\s*28px;\s*height:\s*6px/);
+    assert.match(css, /\.handle\.e\s*\{[^}]*width:\s*6px;\s*height:\s*28px/);
+    assert.match(css, /\.handle\.se\s*\{[^}]*width:\s*10px;\s*height:\s*10px/);
+    const cropHandle = css.slice(css.indexOf(".handle {"), css.indexOf(".handle.tl"));
+    assert.equal(cropHandle.includes("opacity"), false);
+    const source = readFileSync(new URL("./ocr-panel.ts", import.meta.url), "utf8");
+    assert.equal(source.includes('classList.toggle("is-hover"'), true);
+    assert.equal(source.includes("pointer-events: none"), false);
+    assert.equal(source.includes("visibility: hidden"), false);
   });
 
   it("keeps enlarge and font off the page and available after a failed result", () => {

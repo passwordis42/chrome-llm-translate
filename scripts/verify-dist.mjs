@@ -10,7 +10,7 @@ function check(condition, message) {
 
 check(manifest.manifest_version === 3, "manifest_version");
 check(manifest.name === "一翻", "name");
-check(manifest.version === "0.1.11", "version");
+check(manifest.version === "0.1.12", "version");
 check(manifest.commands?.["start-page-translate"]?.suggested_key?.default === "Alt+T", "page shortcut");
 check(manifest.commands?.["start-crop-ocr"]?.suggested_key?.default === "Alt+S", "crop shortcut");
 check(manifest.commands?.["toggle-selection"]?.suggested_key?.default === "Alt+E", "selection shortcut");
