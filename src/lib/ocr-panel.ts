@@ -1,5 +1,6 @@
 /**
- * 截图识译结果窗（v0.1.11）：位置、大小、字号、一键放大。
+ * 截图识译结果窗（v0.1.12）：位置、大小、字号、一键放大。
+ * 出结果后边角把手默认不画，指针进入原热区或正在拖改时才显。
  * 只活在这一次打开里，不写 storage。加载中不进入可交互布局。
  */
 
@@ -283,16 +284,35 @@ export function mountOcrPanel(
   }
 
   if (chrome.resize) {
+    let hotZones = 0;
+    let resizing = false;
+    const syncHandles = () => {
+      panel.classList.toggle("is-hover", hotZones > 0 || resizing);
+      panel.classList.toggle("is-resizing", resizing);
+    };
     for (const edge of OCR_RESIZE_EDGES) {
       const handle = el(document, "span", `handle ${edge}`);
       handle.dataset.edge = edge;
       handle.setAttribute("aria-hidden", "true");
+      handle.addEventListener("pointerenter", () => {
+        hotZones += 1;
+        syncHandles();
+      });
+      handle.addEventListener("pointerleave", () => {
+        hotZones = Math.max(0, hotZones - 1);
+        syncHandles();
+      });
       handle.addEventListener("pointerdown", (event) => {
         const start = controller.getLayout();
-        if (!start) return;
+        if (!start || pointOf(event).button !== 0 || !handle.ownerDocument.defaultView) return;
         event.stopPropagation();
+        resizing = true;
+        syncHandles();
         trackPointer(handle, event, (dx, dy) => {
           controller.onLayout(resizeOcrPanel(start, edge, dx, dy, controller.viewport(), controller.insets?.()));
+        }, () => {
+          resizing = false;
+          syncHandles();
         });
       });
       panel.append(handle);

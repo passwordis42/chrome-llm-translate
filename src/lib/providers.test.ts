@@ -55,7 +55,7 @@ describe("provider catalog", () => {
       version: string;
       host_permissions: string[];
     };
-    assert.equal(manifest.version, "0.1.11");
+    assert.equal(manifest.version, "0.1.12");
     for (const id of PROVIDER_IDS) {
       const host = new URL(PROVIDERS[id].chatCompletionsUrl).host;
       assert.equal(manifest.host_permissions.some((item) => item.includes(host)), true, host);
