@@ -15,10 +15,6 @@
   position: fixed;
   inset: 0;
 }
-:host(#yifan-select-confirm) {
-  position: fixed;
-  width: min(360px, calc(100vw - 16px));
-}
 :host(#yifan-inline-bar) {
   position: fixed;
   display: block;
@@ -165,55 +161,6 @@ img { display: block; }
 .btn.primary.google { background: #1a73e8; border-color: #1a73e8; }
 .btn:disabled { opacity: 0.45; cursor: default; filter: none; }
 .err[hidden], .dst[hidden] { display: none; }
-
-.confirm-card {
-  width: 100%;
-  background: #fffefb;
-  border: 1px solid #e6e0d4;
-  border-radius: 14px;
-  box-shadow: 0 16px 40px rgba(40, 36, 28, 0.16);
-  overflow: hidden;
-}
-.confirm-hd {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 8px 10px 8px 12px;
-  border-bottom: 1px solid #e6e0d4;
-  background: #fbfaf6;
-  font-size: 12px;
-  font-weight: 700;
-  color: #6f6a60;
-}
-.confirm-hd .brand-mini { color: #2c2a26; }
-.confirm-card .close {
-  width: 28px;
-  height: 28px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: #6f6a60;
-  font-size: 16px;
-  line-height: 1;
-  padding: 0;
-  flex-shrink: 0;
-}
-.confirm-card .close:hover { background: #f4f1ea; }
-.confirm-card .preview {
-  margin: 0 14px;
-  padding: 12px 14px 8px;
-  font-size: 13px;
-  line-height: 1.55;
-  color: #6f6a60;
-  border-left: 3px solid #d9d2c4;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.confirm-card .actions { padding: 10px 14px 12px; }
-.confirm-card .btn { padding: 8px 12px; }
-.confirm-card .btn.primary { flex: 1; }
 
 .backdrop {
   min-height: 100%;

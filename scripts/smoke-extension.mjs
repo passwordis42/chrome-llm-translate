@@ -69,27 +69,15 @@ try {
   if (!early.sample.includes("floating card")) fail("示例页原文丢失");
 
   await selectSample(page, "#sample");
-  await page.locator("#yifan-select-confirm").waitFor({ timeout: 5000 });
-  if (await page.locator("#yifan-float").count()) fail("未点翻译就打开了浮层");
-  const confirmText = await shadowText(page, "yifan-select-confirm");
-  if (!confirmText.includes("一翻 · 确认翻译")) fail(`确认条文案不对: ${confirmText}`);
-  if (!confirmText.includes("When a sentence matters")) fail(`确认条没有原文: ${confirmText}`);
-  await page.locator("#yifan-select-confirm").screenshot({ path: path.join(shots, "select-confirm.png") });
-  await page.locator("#yifan-select-confirm").getByRole("button", { name: "取消" }).click();
-  await page.locator("#yifan-select-confirm").waitFor({ state: "detached", timeout: 3000 });
-  if (await page.locator("#yifan-float").count()) fail("取消确认后仍然打开了浮层");
-
-  await selectSample(page, "#sample");
-  await page.locator("#yifan-select-confirm").waitFor({ timeout: 5000 });
-  await page.locator("#yifan-select-confirm").getByRole("button", { name: "翻译", exact: true }).click();
   await page.locator("#yifan-float").waitFor({ timeout: 5000 });
-  if (await page.locator("#yifan-select-confirm").count()) fail("点翻译后确认条还在");
+  if (await page.locator("#yifan-select-confirm").count()) fail("划词开着时仍出确认条");
   await page.waitForFunction((id) => window.shadowPlain(id).includes("不会假翻"), "yifan-float");
   const floatText = await shadowText(page, "yifan-float");
   if (!floatText.includes("不会假翻")) fail(`划词失败提示不对: ${floatText}`);
   if (!floatText.includes("When a sentence matters")) fail(`浮层没有原文: ${floatText}`);
-  if (floatText.includes("插件会把")) fail("没有 Key 却出现了假译文");
-  await page.locator("#yifan-float").screenshot({ path: path.join(shots, "float-error.png") });
+  if (!floatText.includes("一翻 · 划词")) fail(`结果浮层标题不对: ${floatText}`);
+  if (floatText.includes("确认翻译") || floatText.includes("插件会把")) fail("划词开着时不该出确认条或假译文");
+  await page.locator("#yifan-float").screenshot({ path: path.join(shots, "float-immediate.png") });
   await page.locator("#yifan-float").getByRole("button", { name: "关闭" }).click();
   await page.locator("#yifan-float").waitFor({ state: "detached", timeout: 3000 });
 
@@ -103,17 +91,28 @@ try {
       selectionEnabled: true,
       glossary: [],
     };
-    current.selectionMode = "immediate";
+    current.selectionMode = "confirm";
     current.selectionEnabled = true;
     await chrome.storage.local.set({ "yifan.settings.v1": current });
   });
   await page.waitForTimeout(200);
   await selectSample(page, "#second");
   await page.locator("#yifan-float").waitFor({ timeout: 5000 });
-  if (await page.locator("#yifan-select-confirm").count()) fail("划完即翻仍然先出确认条");
+  if (await page.locator("#yifan-select-confirm").count()) fail("旧的先确认字段仍先出确认条");
   const immediateText = await shadowText(page, "yifan-float");
-  if (!immediateText.includes("Unimportant pages")) fail(`划完即翻没有带上选区: ${immediateText}`);
-  if (!immediateText.includes("不会假翻")) fail("划完即翻不该假翻");
+  if (!immediateText.includes("Unimportant pages")) fail(`旧确认字段下没有直接翻: ${immediateText}`);
+  if (!immediateText.includes("不会假翻")) fail("旧确认字段下不该假翻");
+  const cleanedMode = await sw.evaluate(async () => {
+    const deadline = Date.now() + 4000;
+    while (Date.now() < deadline) {
+      const bag = await chrome.storage.local.get("yifan.settings.v1");
+      const stored = bag["yifan.settings.v1"] ?? {};
+      if (!Object.prototype.hasOwnProperty.call(stored, "selectionMode")) return true;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    return false;
+  });
+  if (!cleanedMode) fail("旧的 selectionMode 字段没有被清掉");
   await page.locator("#yifan-float").getByRole("button", { name: "关闭" }).click();
   await page.locator("#yifan-float").waitFor({ state: "detached", timeout: 3000 });
 
@@ -276,6 +275,11 @@ try {
   if (await popup.locator("#model").isVisible()) fail("主弹窗不该出现模型选择");
   if (await popup.locator("#home-target-lang").count()) fail("主弹窗不该再放目标语言");
   if (await popup.locator("#home-mode-confirm").count()) fail("主弹窗不该再放划词模式");
+  const selectionHint = (await popup.locator("#home-view .toggle-row .t-desc").first().innerText()).trim();
+  if (selectionHint !== "选中文字后直接翻译") fail(`划词说明不对: ${selectionHint}`);
+  if ((await popup.locator("#home-selection-toggle").getAttribute("aria-checked")) !== "true") fail("划词开关默认应开启");
+  if ((await popup.locator("#home-view .sub").innerText()).trim() !== "整页 AI · v0.1.13") fail("主弹窗版本不对");
+  await popup.screenshot({ path: path.join(shots, "popup-home.png") });
   await popup.locator("#hotkey-tip").waitFor();
   const tip = (await popup.locator("#hotkey-tip").innerText()).replace(/\s+/g, " ");
   if (!tip.includes("Alt+T") || !tip.includes("Alt+S") || !tip.includes("Alt+E") || !tip.includes("⌞")) {
@@ -301,8 +305,12 @@ try {
   await popup.waitForTimeout(200);
   const defaultModel = await popup.locator("#model").inputValue();
   if (defaultModel !== "qwen3.7-plus") fail(`默认模型不是 qwen3.7-plus: ${defaultModel}`);
-  const confirmPressed = await popup.locator("#mode-confirm").getAttribute("aria-pressed");
-  if (confirmPressed !== "true") fail("默认划词模式不是先确认再翻");
+  if (await popup.locator("#mode-confirm, #mode-immediate").count()) fail("设置页不该再有划词模式");
+  const settingsCopy = await popup.locator("#settings-view").innerText();
+  if (settingsCopy.includes("划词模式") || settingsCopy.includes("先确认再翻") || settingsCopy.includes("划完即翻")) {
+    fail(`设置页还留着划词模式: ${settingsCopy}`);
+  }
+  if ((await popup.locator("#settings-view .sub").innerText()).trim() !== "快捷键 / API / 厂商 · v0.1.13") fail("设置页版本不对");
   await popup.screenshot({ path: path.join(shots, "settings.png") });
   await popup.getByRole("button", { name: "测试连接" }).click();
   await popup.getByText("请先填写 API Key。不会假翻。").waitFor();
@@ -345,7 +353,8 @@ try {
   const saved = stored["yifan.settings.v1"];
   if (saved.apiKey !== "sk-invalid-smoke-key") fail("Key 没有写进本地存储");
   if (saved.model !== "qwen-turbo") fail(`手填旧模型没有保存: ${saved.model}`);
-  if (saved.selectionMode !== "confirm") fail(`划词模式被清掉了: ${saved.selectionMode}`);
+  if (Object.prototype.hasOwnProperty.call(saved, "selectionMode")) fail(`划词模式字段还在: ${saved.selectionMode}`);
+  if (saved.selectionEnabled !== true) fail("保存不该关掉划词开关");
   if (saved.glossary?.length) fail("删掉的术语还在");
   await sw.evaluate(async () => chrome.storage.local.remove("yifan.settings.v1"));
 
@@ -357,10 +366,11 @@ try {
 
 async function exerciseShortcuts(page, sw, tabId) {
   await selectSample(page, "#sample");
-  await page.locator("#yifan-select-confirm").waitFor({ timeout: 5000 });
+  await page.locator("#yifan-float").waitFor({ timeout: 5000 });
+  if (await page.locator("#yifan-select-confirm").count()) fail("Alt+E 之前不该出确认条");
   await page.keyboard.press("Alt+E");
   await page.waitForFunction((id) => window.shadowPlain(id).includes("划词已关"), "yifan-toast");
-  await page.locator("#yifan-select-confirm").waitFor({ state: "detached", timeout: 3000 });
+  await page.locator("#yifan-float").waitFor({ state: "detached", timeout: 3000 });
   await selectSample(page, "#second");
   await page.waitForTimeout(400);
   if (await page.locator("#yifan-select-confirm").count()) fail("Alt+E 关掉划词后仍出确认条");
@@ -419,6 +429,7 @@ async function exerciseRebind(popup) {
   await popup.locator("#hk-crop.listening").waitFor();
   const listening = await popup.locator("#hk-crop").innerText();
   if (!listening.includes("按下新组合键")) fail(`改键态不对: ${listening}`);
+  await popup.screenshot({ path: path.join(shots, "settings-rebinding.png") });
   await popup.keyboard.press("Escape");
   if ((await popup.locator("#hk-crop").innerText()) !== "Alt+S") fail("Esc 取消后识译键丢了");
   await popup.locator("#rebind-crop").click();

@@ -10,7 +10,7 @@ function check(condition, message) {
 
 check(manifest.manifest_version === 3, "manifest_version");
 check(manifest.name === "一翻", "name");
-check(manifest.version === "0.1.12", "version");
+check(manifest.version === "0.1.13", "version");
 check(manifest.commands?.["start-page-translate"]?.suggested_key?.default === "Alt+T", "page shortcut");
 check(manifest.commands?.["start-crop-ocr"]?.suggested_key?.default === "Alt+S", "crop shortcut");
 check(manifest.commands?.["toggle-selection"]?.suggested_key?.default === "Alt+E", "selection shortcut");
@@ -40,8 +40,9 @@ for (const file of [
 const content = readFileSync("dist/content.js", "utf8");
 check(content.includes("不会假翻"), "content keeps the honest-failure copy");
 check(content.includes("一翻 · 划词"), "float title");
-check(content.includes("一翻 · 确认翻译"), "selection confirm title");
-check(content.includes("关闭确认条"), "selection confirm close label");
+check(!content.includes("一翻 · 确认翻译"), "selection confirm title is gone");
+check(!content.includes("关闭确认条"), "selection confirm close label is gone");
+check(!content.includes("yifan-select-confirm"), "selection confirm host is gone");
 check(content.includes("清除译文"), "inline clear control");
 check(content.includes("复制全部译文"), "copy all translations");
 check(content.includes("停止"), "inline stop control");
@@ -66,8 +67,10 @@ check(content.includes("yifan-force-select"), "force-select style id");
 check(content.includes("-webkit-user-select"), "webkit user-select override");
 
 const popup = readFileSync("dist/popup.html", "utf8");
-check(popup.includes("先确认再翻"), "confirm mode copy");
-check(popup.includes("划完即翻"), "immediate mode copy");
+check(popup.includes("选中文字后直接翻译"), "home selection hint");
+check(!popup.includes("先确认再翻"), "confirm mode copy is gone");
+check(!popup.includes("划完即翻"), "immediate mode copy is gone");
+check(!popup.includes("划词模式"), "selection mode section is gone");
 check(popup.includes("qwen3.7-plus"), "default curated model");
 check(popup.includes("快速便宜") && popup.includes("均衡") && popup.includes("能力高"), "model tier labels");
 check(!popup.includes('value="qwen-turbo"') && !popup.includes('value="qwen-plus"') && !popup.includes('value="qwen-max"'), "legacy ids stay out of the curated select");
@@ -82,9 +85,12 @@ const home = popup.slice(popup.indexOf('id="home-view"'), popup.indexOf('id="set
 const settings = popup.slice(popup.indexOf('id="settings-view"'), popup.indexOf('id="glossary-view"'));
 check(home.includes("快捷") && home.includes("截图识译") && home.includes("Alt+T") && home.includes("Alt+S") && home.includes("Alt+E") && home.includes("⌞"), "home shortcuts");
 check(!home.includes("未设置") && !popup.includes("未设置"), "tip does not say unset");
-check(!home.includes("先确认再翻") && !home.includes("源语言"), "home has no language or selection mode");
+check(home.includes("选中文字后直接翻译") && home.includes('id="home-selection-toggle"'), "home keeps the selection switch");
+check(!home.includes("先确认再翻") && !home.includes("源语言") && !home.includes("划词模式"), "home has no language or selection mode");
 check(!home.includes("api-key") && !home.includes("qwen3.7-plus") && !home.includes('id="model"'), "home has no key or model");
-check(settings.includes("划词模式") && settings.includes("启用鼠标手势") && settings.includes("源语言"), "settings owns language, mode, gesture");
+check(!settings.includes("划词模式") && !settings.includes("先确认再翻") && !settings.includes("划完即翻"), "settings has no selection mode");
+check(!settings.includes('id="mode-confirm"') && !settings.includes('id="mode-immediate"'), "settings has no mode buttons");
+check(settings.includes("启用鼠标手势") && settings.includes("源语言"), "settings owns language and gesture");
 check(settings.includes("恢复默认") && settings.includes("划词翻译开/关") && settings.includes("以扩展内设置为准") && settings.includes("⌞"), "settings rebind and gesture copy");
 check(!settings.includes('id="selection-toggle"') && !settings.includes('id="force-select-toggle"') && !settings.includes('id="open-glossary"'), "settings does not mirror home toggles");
 check(!settings.includes('id="home-selection-toggle"'), "settings does not host the selection switch");

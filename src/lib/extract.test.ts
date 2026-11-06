@@ -113,7 +113,7 @@ describe("settings and selection", () => {
     assert.equal(normalizeSettings({ model: "bad model", apiKey: "  sk-1  " }).model, "qwen3.7-plus");
     assert.equal(normalizeSettings({ model: "qwen-plus" }).model, "qwen-plus");
     assert.equal(defaultSettings().model, "qwen3.7-plus");
-    assert.equal(defaultSettings().selectionMode, "confirm");
+    assert.equal("selectionMode" in defaultSettings(), false);
     assert.equal(normalizeSettings({ apiKey: "  sk-1  " }).apiKey, "sk-1");
     assert.equal(normalizeSettings({ selectionEnabled: false }).selectionEnabled, false);
   });

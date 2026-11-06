@@ -298,32 +298,6 @@ input::placeholder { color: #b0aa9e; }
 }
 .switch[aria-checked="true"]::after { left: 19px; }
 .switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.mode-box {
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: #fff;
-  padding: 10px 12px;
-  margin-bottom: 12px;
-}
-.mode-box .t-desc { margin-bottom: 8px; }
-.seg { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-.seg button {
-  font: inherit;
-  font-size: 12px;
-  font-weight: 700;
-  border-radius: 8px;
-  border: 1px solid var(--line);
-  background: #faf8f3;
-  color: var(--ink);
-  padding: 8px 6px;
-  cursor: pointer;
-}
-.seg button[aria-pressed="true"] {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-  color: var(--accent);
-}
-.seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .link-btn {
   width: 100%;
   text-align: left;

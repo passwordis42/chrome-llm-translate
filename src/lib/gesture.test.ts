@@ -239,7 +239,7 @@ describe("shortcut commands", () => {
       permissions: string[];
       commands: Record<string, { description: string; suggested_key: { default: string; mac?: string } }>;
     };
-    assert.equal(manifest.version, "0.1.12");
+    assert.equal(manifest.version, "0.1.13");
     assert.equal(manifest.permissions.includes("notifications"), true);
     const page = manifest.commands[PAGE_TRANSLATE_COMMAND];
     const crop = manifest.commands[CROP_OCR_COMMAND];
@@ -351,7 +351,9 @@ describe("shortcut commands", () => {
     assert.equal(settings.includes('id="selection-toggle"'), false);
     assert.equal(settings.includes('id="force-select-toggle"'), false);
     assert.equal(settings.includes('id="open-glossary"'), false);
-    assert.match(settings, /划词模式/);
+    assert.equal(settings.includes("划词模式"), false);
+    assert.equal(settings.includes("先确认再翻"), false);
+    assert.equal(settings.includes("划完即翻"), false);
     assert.match(settings, /id="gesture-toggle"/);
     assert.match(settings, /源语言/);
   });
