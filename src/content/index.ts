@@ -4,7 +4,6 @@ import { isYifanEvent } from "./dom.ts";
 import { closeSelectionFloat, currentFloatText, initFloat, isFloatOpen, openSelectionFloat, repositionFloat } from "./float.ts";
 import { mountPageGesture } from "./gesture.ts";
 import { clearInlinePage, initPage, isInlinePageOpen, pageStatus, startInlinePage, stopInlinePage, syncToolbarPair } from "./pageview.ts";
-import { closeSelectConfirm, currentSelectConfirmText, isSelectConfirmOpen, openSelectConfirm, repositionSelectConfirm } from "./select-confirm.ts";
 import { missingKeyNotice, type ShortcutAction } from "../lib/commands.ts";
 import { createShortcutGate, matchShortcut } from "../lib/shortcuts.ts";
 import type { PageControlStatus } from "../lib/inpage.ts";
@@ -38,7 +37,6 @@ function boot(): void {
   const forceSelect = createForceSelect(document, {
     onForcedMouseDown() {
       closeSelectionFloat();
-      closeSelectConfirm();
     },
     onForcedMouseUp() {
       offerSelection();
@@ -101,7 +99,6 @@ function boot(): void {
   document.addEventListener("mousedown", (event) => {
     if (isYifanEvent(event)) return;
     closeSelectionFloat();
-    closeSelectConfirm();
   }, true);
 
   document.addEventListener("mouseup", (event) => {
@@ -113,10 +110,6 @@ function boot(): void {
     if (event.key === "Escape") {
       if (isConfirmOpen()) return;
       if (dismissOcrUi()) return;
-      if (isSelectConfirmOpen()) {
-        closeSelectConfirm();
-        return;
-      }
       if (isFloatOpen()) {
         closeSelectionFloat();
         return;
@@ -132,11 +125,9 @@ function boot(): void {
 
   document.addEventListener("scroll", () => {
     if (isFloatOpen()) repositionFloat();
-    if (isSelectConfirmOpen()) repositionSelectConfirm();
   }, true);
   window.addEventListener("resize", () => {
     if (isFloatOpen()) repositionFloat();
-    if (isSelectConfirmOpen()) repositionSelectConfirm();
   });
 
   function offerSelection(): void {
@@ -144,23 +135,14 @@ function boot(): void {
     const active = document.activeElement;
     if (active instanceof HTMLElement) {
       if (/^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName)) return;
-      if (active.id === "yifan-select-confirm" || active.id === "yifan-float" || active.id === "yifan-dialog") return;
+      if (active.id === "yifan-float" || active.id === "yifan-dialog") return;
     }
     const text = cleanSelection(window.getSelection()?.toString() ?? "");
     const action = selectionOffer({
       selectionEnabled: settings.selectionEnabled,
-      selectionMode: settings.selectionMode,
       text,
     });
     if (action === "none") return;
-    if (action === "confirm") {
-      if (isFloatOpen() && currentFloatText() === text) return;
-      if (isSelectConfirmOpen() && currentSelectConfirmText() === text) return;
-      closeSelectionFloat();
-      openSelectConfirm(text, (confirmed) => openSelectionFloat(confirmed));
-      return;
-    }
-    closeSelectConfirm();
     if (isFloatOpen() && currentFloatText() === text) return;
     openSelectionFloat(text);
   }
@@ -172,7 +154,6 @@ function boot(): void {
       const text = live || cleanSelection(message.text ?? "");
       if (!text) return;
       dismissConfirm();
-      closeSelectConfirm();
       openSelectionFloat(text);
       return;
     }
@@ -216,7 +197,6 @@ function boot(): void {
     }
     if (message.type === "show-page-google") {
       closeSelectionFloat();
-      closeSelectConfirm();
       const confirmed = await showConfirm("google");
       if (!confirmed) return;
       const response = (await chrome.runtime.sendMessage({ type: "google-translate" })) as
@@ -254,7 +234,6 @@ function boot(): void {
       settings = updated;
       if (!next) {
         closeSelectionFloat();
-        closeSelectConfirm();
       }
       showSelectionToast(next);
     });
@@ -264,7 +243,6 @@ function boot(): void {
 
   async function beginPageTranslate(): Promise<void> {
     closeSelectionFloat();
-    closeSelectConfirm();
     const opened = await startInlinePage();
     if (opened === "empty") {
       await showNotice("一翻 · 整页 AI", "这一页没有找到可翻译的段落。没有改动原文。");
@@ -273,7 +251,6 @@ function boot(): void {
 
   async function beginCrop(): Promise<void> {
     closeSelectionFloat();
-    closeSelectConfirm();
     dismissConfirm();
     settings = await readSettings().catch(() => settings);
     if (!providerSupportsVision(settings.provider)) {

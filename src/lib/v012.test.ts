@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { parseHTML } from "linkedom";
-import { selectionOffer, selectionPreview } from "./selection.ts";
 import {
   CURATED_MODELS,
   DEFAULT_MODEL,
@@ -14,49 +13,6 @@ import {
 } from "./settings.ts";
 
 const LEGACY_MODELS = ["qwen-turbo", "qwen-plus", "qwen-max"];
-
-describe("selection confirm", () => {
-  it("defaults to confirm-before-translate and does not request a translation", () => {
-    assert.equal(defaultSettings().selectionMode, "confirm");
-    assert.equal(normalizeSettings({}).selectionMode, "confirm");
-    assert.equal(normalizeSettings({ selectionMode: "nope" }).selectionMode, "confirm");
-    const offer = selectionOffer({
-      selectionEnabled: true,
-      selectionMode: defaultSettings().selectionMode,
-      text: "The plugin keeps the original",
-    });
-    assert.equal(offer, "confirm");
-  });
-
-  it("switches to immediate translate when the setting says so", () => {
-    assert.equal(normalizeSettings({ selectionMode: "immediate" }).selectionMode, "immediate");
-    assert.equal(
-      selectionOffer({ selectionEnabled: true, selectionMode: "immediate", text: "hello" }),
-      "translate",
-    );
-    assert.equal(
-      selectionOffer({ selectionEnabled: true, selectionMode: "confirm", text: "hello" }),
-      "confirm",
-    );
-  });
-
-  it("offers nothing when selection translate is off or the selection is empty", () => {
-    assert.equal(
-      selectionOffer({ selectionEnabled: false, selectionMode: "immediate", text: "hello" }),
-      "none",
-    );
-    assert.equal(
-      selectionOffer({ selectionEnabled: true, selectionMode: "confirm", text: "   " }),
-      "none",
-    );
-  });
-
-  it("keeps a single-line preview of the original", () => {
-    const preview = selectionPreview("  The plugin keeps\nthe original  ");
-    assert.equal(preview, "The plugin keeps the original");
-    assert.equal(preview.includes("\n"), false);
-  });
-});
 
 describe("model tiers", () => {
   it("defaults to qwen3.7-plus and lists the curated tiers", () => {
@@ -89,7 +45,7 @@ describe("model tiers", () => {
       });
       assert.equal(settings.model, legacy);
       assert.equal(settings.apiKey, "sk-legacy");
-      assert.equal(settings.selectionMode, "confirm");
+      assert.equal("selectionMode" in settings, false);
       assert.equal(settings.glossary.length, 1);
     }
     assert.equal(normalizeSettings({ model: "qwen2.5-72b-instruct" }).model, "qwen2.5-72b-instruct");
@@ -115,7 +71,7 @@ describe("model tiers", () => {
 });
 
 describe("settings ui and edge notes", () => {
-  it("renders three model groups, the confirm-mode control, and no legacy curated options", () => {
+  it("renders three model groups and no legacy curated options", () => {
     const html = readFileSync(new URL("../popup/popup.html", import.meta.url), "utf8");
     const { document } = parseHTML(html);
     const groups = [...document.querySelectorAll("#model optgroup")].map((group) => ({
@@ -129,22 +85,23 @@ describe("settings ui and edge notes", () => {
     const selected = document.querySelector<HTMLOptionElement>("#model option[selected]");
     assert.equal(selected?.value, "qwen3.7-plus");
     assert.equal(document.querySelector("#custom-model")?.getAttribute("placeholder"), "例如 qwen-plus（留空则用上方精选）");
-    assert.equal(document.querySelector("#mode-confirm")?.textContent, "先确认再翻");
-    assert.equal(document.querySelector("#mode-confirm")?.getAttribute("aria-pressed"), "true");
-    assert.equal(document.querySelector("#mode-immediate")?.textContent, "划完即翻");
-    assert.equal(document.querySelector("#settings-view .sub")?.textContent, "快捷键 / API / 厂商 · v0.1.12");
+    assert.equal(document.querySelector("#mode-confirm"), null);
+    assert.equal(document.querySelector("#mode-immediate"), null);
+    assert.equal(document.querySelector("#settings-view .sub")?.textContent, "快捷键 / API / 厂商 · v0.1.13");
     const home = document.querySelector("#home-view");
     assert.equal(home?.querySelector("#api-key"), null);
     assert.equal(home?.querySelector("#model"), null);
     assert.equal(home?.querySelector("#start-page")?.textContent, "开始");
     assert.equal(home?.querySelector("#stop-page")?.textContent, "停止");
     assert.equal(home?.querySelector("#clear-page")?.textContent, "清除");
-    assert.equal(home?.querySelector(".sub")?.textContent, "整页 AI · v0.1.12");
+    assert.equal(home?.querySelector(".sub")?.textContent, "整页 AI · v0.1.13");
     assert.equal(document.querySelector("#back-home")?.getAttribute("aria-label"), "返回主弹窗");
     assert.equal(document.querySelector("#settings-view h1")?.textContent, "设置");
-    assert.match(html, /选中文本弹出确认或浮层/);
-    assert.equal(html.includes("选中文本弹出确认或浮层（默认开）"), false);
-    assert.match(html, /默认先确认再翻，避免误触耗额度/);
+    assert.match(html, /选中文字后直接翻译/);
+    assert.equal(html.includes("选中文本弹出确认或浮层"), false);
+    assert.equal(html.includes("划词模式"), false);
+    assert.equal(html.includes("先确认再翻"), false);
+    assert.equal(html.includes("划完即翻"), false);
     for (const legacy of LEGACY_MODELS) {
       assert.equal(document.querySelector(`#model option[value="${legacy}"]`), null);
     }
@@ -157,17 +114,18 @@ describe("settings ui and edge notes", () => {
       version: string;
       manifest_version: number;
     };
-    assert.equal(manifest.version, "0.1.12");
+    assert.equal(manifest.version, "0.1.13");
     assert.equal(manifest.manifest_version, 3);
     for (const doc of [readme, edge]) {
-      assert.match(doc, /0\.1\.12/);
+      assert.match(doc, /0\.1\.13/);
       assert.match(doc, /edge:\/\/extensions/);
       assert.match(doc, /chrome:\/\/extensions/);
       assert.match(doc, /dist\//);
       assert.match(doc, /qwen3\.7-plus/);
     }
     assert.match(edge, /加载解压缩的扩展|Load unpacked/);
-    assert.match(readme, /先确认再翻/);
+    assert.match(readme, /选完直接翻译/);
+    assert.equal(readme.includes("划词模式"), false);
     const undone = readme.split("## 不做")[1] ?? "";
     assert.match(undone, /Firefox/);
     assert.equal(/Edge/.test(undone), false);

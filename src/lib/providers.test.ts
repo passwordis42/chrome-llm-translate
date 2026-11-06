@@ -55,7 +55,7 @@ describe("provider catalog", () => {
       version: string;
       host_permissions: string[];
     };
-    assert.equal(manifest.version, "0.1.12");
+    assert.equal(manifest.version, "0.1.13");
     for (const id of PROVIDER_IDS) {
       const host = new URL(PROVIDERS[id].chatCompletionsUrl).host;
       assert.equal(manifest.host_permissions.some((item) => item.includes(host)), true, host);
@@ -124,7 +124,8 @@ describe("settings migration", () => {
     assert.equal(settings.providers.openai.apiKey, "");
     assert.equal(settings.providers.openai.model, "gpt-4o-mini");
     assert.equal(settings.targetLang, "ja");
-    assert.equal(settings.selectionMode, "immediate");
+    assert.equal("selectionMode" in settings, false);
+    assert.equal(JSON.stringify(settings).includes("selectionMode"), false);
     assert.equal(settings.glossary.length, 1);
     assert.equal(isLegacySettingsRecord(settings), false);
     const again = normalizeSettings(settings);

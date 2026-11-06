@@ -26,7 +26,7 @@ describe("force select setting", () => {
     assert.equal(normalizeSettings({ forceSelectEnabled: "yes" }).forceSelectEnabled, false);
     assert.equal(normalizeSettings({ forceSelectEnabled: true }).forceSelectEnabled, true);
     assert.equal(normalizeSettings({ forceSelectEnabled: true }).selectionEnabled, true);
-    assert.equal(normalizeSettings({ forceSelectEnabled: true }).selectionMode, "confirm");
+    assert.equal("selectionMode" in normalizeSettings({ forceSelectEnabled: true, selectionMode: "confirm" }), false);
   });
 });
 
@@ -206,7 +206,7 @@ describe("force select settings ui", () => {
       version: string;
       content_scripts: Array<{ run_at?: string }>;
     };
-    assert.equal(manifest.version, "0.1.12");
+    assert.equal(manifest.version, "0.1.13");
     assert.equal(manifest.content_scripts[0]?.run_at, "document_start");
 
     const content = readFileSync(new URL("../content/index.ts", import.meta.url), "utf8");

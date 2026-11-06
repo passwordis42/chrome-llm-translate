@@ -21,8 +21,6 @@ export const MODEL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
 export const INVALID_MODEL_MESSAGE = "模型 id 无效。请改成百炼的 model id 后再试——不会假翻。";
 
-export type SelectionMode = "confirm" | "immediate";
-
 export interface ProviderSlot {
   apiKey: string;
   model: string;
@@ -47,7 +45,6 @@ export interface Settings {
   sourceLang: string;
   targetLang: string;
   selectionEnabled: boolean;
-  selectionMode: SelectionMode;
   /** 打开后才强制放开站点禁划选的正文。新装默认关。 */
   forceSelectEnabled: boolean;
   /** 右键拐角手势。新装默认开；关掉后三条拐角都不触发，快捷键和按钮仍可用。 */
@@ -78,7 +75,6 @@ export function defaultSettings(): Settings {
     sourceLang: "auto",
     targetLang: "zh",
     selectionEnabled: true,
-    selectionMode: "confirm",
     forceSelectEnabled: false,
     visionModel: DEFAULT_VISION_MODEL,
     gestureEnabled: true,
@@ -106,10 +102,6 @@ export function normalizeProviderModel(provider: ProviderId, value: unknown): st
   const trimmed = value.trim();
   if (!isModelId(trimmed)) return fallback;
   return trimmed;
-}
-
-export function normalizeSelectionMode(value: unknown): SelectionMode {
-  return value === "immediate" ? "immediate" : "confirm";
 }
 
 /** 空的或写坏的视觉模型退回 qwen3-vl-plus，不用文本模型顶上。 */
@@ -178,7 +170,6 @@ export function normalizeSettings(raw: unknown): Settings {
     sourceLang: isSourceLang(record.sourceLang) ? record.sourceLang : base.sourceLang,
     targetLang: isTargetLang(record.targetLang) ? record.targetLang : base.targetLang,
     selectionEnabled: typeof record.selectionEnabled === "boolean" ? record.selectionEnabled : true,
-    selectionMode: normalizeSelectionMode(record.selectionMode),
     forceSelectEnabled: record.forceSelectEnabled === true,
     gestureEnabled: typeof record.gestureEnabled === "boolean" ? record.gestureEnabled : true,
     shortcuts: normalizeShortcuts(record.shortcuts),
@@ -209,11 +200,19 @@ export function activateProvider(settings: Settings, provider: ProviderId): Sett
   return normalizeSettings({ ...settings, provider, providers: settings.providers });
 }
 
-/** 旧版没有快捷键槽，或槽和规范化结果不一致时，要把默认或纠正后的三条写回去。 */
+/**
+ * 旧版没有快捷键槽，或槽和规范化结果不一致时，要把默认或纠正后的三条写回去。
+ * v0.1.13 起存储里的 selectionMode（先确认 / 划完即翻）不再参与行为，读到就清掉。
+ */
 export function shouldRewriteSettings(raw: unknown): boolean {
   if (isLegacySettingsRecord(raw)) return true;
+  if (hasStaleSelectionMode(raw)) return true;
   const shortcuts = raw && typeof raw === "object" ? (raw as { shortcuts?: unknown }).shortcuts : undefined;
   return !shortcutsStorageMatches(shortcuts, normalizeShortcuts(shortcuts));
+}
+
+function hasStaleSelectionMode(raw: unknown): boolean {
+  return Boolean(raw) && typeof raw === "object" && Object.prototype.hasOwnProperty.call(raw, "selectionMode");
 }
 
 export function readSettings(): Promise<Settings> {

@@ -12,7 +12,6 @@ import {
   resolveModelChoice,
   updateProviderSlot,
   writeSettings,
-  type SelectionMode,
   type Settings,
 } from "../lib/settings.ts";
 import {
@@ -52,8 +51,6 @@ const quotaSub = document.querySelector<HTMLElement>("#quota-sub");
 const quotaBadge = document.querySelector<HTMLElement>("#quota-badge");
 const sourceSelect = document.querySelector<HTMLSelectElement>("#source-lang");
 const targetSelect = document.querySelector<HTMLSelectElement>("#target-lang");
-const modeConfirm = document.querySelector<HTMLButtonElement>("#mode-confirm");
-const modeImmediate = document.querySelector<HTMLButtonElement>("#mode-immediate");
 const gestureToggle = document.querySelector<HTMLButtonElement>("#gesture-toggle");
 const homeSelection = document.querySelector<HTMLButtonElement>("#home-selection-toggle");
 const homeForce = document.querySelector<HTMLButtonElement>("#home-force-select");
@@ -89,7 +86,7 @@ if (
   !providerSelect || !keyInput || !keyHint || !modelLabel || !modelHint || !modelSelect ||
   !customLabel || !customHint || !customModel || !quota || !quotaMain || !quotaSub || !quotaBadge ||
   !sourceSelect || !targetSelect ||
-  !modeConfirm || !modeImmediate || !gestureToggle || !err || !errTitle || !errBody || !ok || !okTitle || !okBody ||
+  !gestureToggle || !err || !errTitle || !errBody || !ok || !okTitle || !okBody ||
   !testButton || !saveButton || !rows || !termSource || !termTarget || !glossaryError ||
   !homeSelection || !homeForce || !hotkeyPage || !hotkeyCrop || !hotkeySelection || !ocrButton || !ocrNote ||
   !hkPage || !hkCrop || !hkSelection || !rebindPage || !rebindCrop || !rebindSelection ||
@@ -104,7 +101,7 @@ const ui = {
   providerSelect, keyInput, keyHint, modelLabel, modelHint, modelSelect,
   customLabel, customHint, customModel, quota, quotaMain, quotaSub, quotaBadge,
   sourceSelect, targetSelect,
-  modeConfirm, modeImmediate, gestureToggle, err, errTitle, errBody, ok, okTitle, okBody, testButton, saveButton,
+  gestureToggle, err, errTitle, errBody, ok, okTitle, okBody, testButton, saveButton,
   rows, termSource, termTarget, glossaryError,
   homeSelection, homeForce, hotkeyPage, hotkeyCrop, hotkeySelection, ocrButton, ocrNote,
   hkPage, hkCrop, hkSelection, rebindPage, rebindCrop, rebindSelection, restoreShortcutsButton, hkError,
@@ -194,8 +191,6 @@ bindSwitch(ui.gestureToggle, (next) => {
   applyGestureSwitch(next);
   void patchSettings({ gestureEnabled: next });
 });
-ui.modeConfirm.addEventListener("click", () => persistMode("confirm"));
-ui.modeImmediate.addEventListener("click", () => persistMode("immediate"));
 bindLang(ui.sourceSelect, "sourceLang");
 bindLang(ui.targetSelect, "targetLang");
 
@@ -324,7 +319,6 @@ function applyShortcuts(settings: Settings): void {
   applySelectionSwitch(settings.selectionEnabled);
   applyForceSelectSwitch(settings.forceSelectEnabled);
   applyGestureSwitch(settings.gestureEnabled);
-  applyMode(settings.selectionMode);
   renderGlossary(settings.glossary);
   applyOcrAvailability(settings);
   if (!listeningShortcut) managedShortcuts = { ...settings.shortcuts };
@@ -366,15 +360,6 @@ function applyGestureSwitch(on: boolean): void {
   ui.gestureToggle.setAttribute("aria-label", on ? "启用鼠标手势，已开启" : "启用鼠标手势，已关闭");
 }
 
-function applyMode(mode: SelectionMode): void {
-  ui.modeConfirm.setAttribute("aria-pressed", mode === "confirm" ? "true" : "false");
-  ui.modeImmediate.setAttribute("aria-pressed", mode === "immediate" ? "true" : "false");
-}
-
-function currentMode(): SelectionMode {
-  return ui.modeImmediate.getAttribute("aria-pressed") === "true" ? "immediate" : "confirm";
-}
-
 function bindSwitch(button: HTMLButtonElement, persist: (next: boolean) => void): void {
   button.addEventListener("click", () => {
     persist(button.getAttribute("aria-checked") !== "true");
@@ -410,15 +395,6 @@ function closeGlossary(): void {
   ui.glossaryView.hidden = true;
   if (glossaryFrom === "home") showHome();
   else showSettings();
-}
-
-function persistMode(mode: SelectionMode): void {
-  applyMode(mode);
-  clearBanners();
-  void enqueue(async () => {
-    const current = await readSettings();
-    await writeSettings({ ...current, selectionMode: mode });
-  });
 }
 
 function chosenModel(): ReturnType<typeof resolveModelChoice> {
@@ -530,7 +506,6 @@ async function saveForm(): Promise<void> {
         sourceLang: ui.sourceSelect.value,
         targetLang,
         selectionEnabled: current.selectionEnabled,
-        selectionMode: currentMode(),
         forceSelectEnabled: current.forceSelectEnabled,
         gestureEnabled: ui.gestureToggle.getAttribute("aria-checked") === "true",
         glossary: current.glossary,

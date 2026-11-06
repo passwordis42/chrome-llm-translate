@@ -248,7 +248,8 @@ describe("v0.1.8 surfaces", () => {
     assert.match(home.querySelector("#hotkey-tip")?.textContent ?? "", /⌞/);
     assert.equal((home.querySelector("#hotkey-tip")?.textContent ?? "").includes("未设置"), false);
     assert.equal(document.querySelector("#settings-view #source-lang")?.getAttribute("aria-label"), "源语言");
-    assert.equal(document.querySelector("#settings-view #mode-confirm")?.textContent, "先确认再翻");
+    assert.equal(document.querySelector("#settings-view #mode-confirm"), null);
+    assert.equal(document.querySelector("#settings-view #mode-immediate"), null);
     assert.equal(document.querySelector("#settings-view #gesture-toggle")?.getAttribute("aria-checked"), "true");
     assert.equal(document.querySelector("#settings-view #api-key")?.getAttribute("type"), "password");
     assert.equal(document.querySelector("#settings-view #model option[selected]")?.getAttribute("value"), "qwen3.7-plus");

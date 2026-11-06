@@ -4,7 +4,6 @@ const HOST_IDS = new Set([
   "yifan-float",
   "yifan-dialog",
   "yifan-inline-bar",
-  "yifan-select-confirm",
   "yifan-crop",
   "yifan-ocr",
   "yifan-toast",
