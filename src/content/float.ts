@@ -4,6 +4,19 @@ import type { Settings } from "../lib/settings.ts";
 import { copyText, el, markImg, mount, selectionRect } from "./dom.ts";
 import { computeFloatPosition } from "../lib/layout.ts";
 import { requestTranslation, type StreamError } from "./session.ts";
+import {
+  SELECTION_FLOAT_DEFAULT_WIDTH_CSS,
+  SELECTION_FLOAT_ENLARGED_WIDTH_CSS,
+  SELECTION_FLOAT_FONT_PX,
+  SELECTION_FLOAT_MAX_HEIGHT_CSS,
+  createSelectionFloatSession,
+  mountSelectionFloatShell,
+  noteSelectionFloatContent,
+  placeSelectionFloat,
+  selectionFloatRenderedSize,
+  type SelectionFloatLayout,
+  type SelectionFloatShell,
+} from "../lib/selection-float.ts";
 
 export interface FloatDeps {
   getSettings: () => Settings;
@@ -14,6 +27,7 @@ export interface FloatDeps {
 let deps: FloatDeps | null = null;
 let host: HTMLDivElement | null = null;
 let root: ShadowRoot | null = null;
+let shell: SelectionFloatShell | null = null;
 let srcNode: HTMLElement | null = null;
 let dstNode: HTMLElement | null = null;
 let errNode: HTMLElement | null = null;
@@ -25,6 +39,7 @@ let actions: HTMLElement | null = null;
 let activeText = "";
 let abort: AbortController | null = null;
 let runId = 0;
+const session = createSelectionFloatSession();
 
 export function initFloat(next: FloatDeps): void {
   deps = next;
@@ -45,28 +60,26 @@ export function closeSelectionFloat(): void {
   host?.remove();
   host = null;
   root = null;
+  shell = null;
+  session.close();
   activeText = "";
 }
 
+/** 滚动或视口变化：没拖过才回到选区旁，拖过只保证仍在视口内。 */
 export function repositionFloat(): void {
-  if (!host) return;
-  const rect = selectionRect();
-  const pos = computeFloatPosition({
-    rect: rect
-      ? { left: rect.left, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height }
-      : null,
-    card: { width: host.offsetWidth || 380, height: host.offsetHeight || 180 },
-    viewport: { width: window.innerWidth, height: window.innerHeight },
-  });
-  host.style.left = `${Math.round(pos.left)}px`;
-  host.style.top = `${Math.round(pos.top)}px`;
+  const current = session.current();
+  if (!host || !current) return;
+  const draft = { ...current, contentHeight: measureContentHeight() };
+  const anchor = draft.moved ? null : selectionAnchor(draft);
+  paint(session.commit(placeSelectionFloat(draft, anchor, currentViewport())));
 }
 
 export function openSelectionFloat(text: string): void {
   const cleaned = cleanSelection(text);
   if (classifySelection(cleaned) === "empty") return;
   ensure();
-  if (!srcNode || !dstNode || !langNode) return;
+  if (!srcNode || !dstNode || !langNode || !host) return;
+  session.close();
   activeText = cleaned;
   srcNode.textContent = cleaned;
   langRow?.setAttribute("hidden", "");
@@ -75,8 +88,18 @@ export function openSelectionFloat(text: string): void {
   dstNode.textContent = "";
   dstNode.classList.add("live");
   setActions("translate");
-  if (host) host.hidden = false;
-  repositionFloat();
+  host.hidden = false;
+  host.classList.remove("is-enlarged");
+  const contentHeight = measureContentHeight();
+  const draft: SelectionFloatLayout = {
+    left: 0,
+    top: 0,
+    enlarged: false,
+    moved: false,
+    contentHeight,
+  };
+  const anchor = selectionAnchor(draft);
+  paint(session.commit(placeSelectionFloat(session.open(anchor, contentHeight), anchor, currentViewport())));
   requestAnimationFrame(() => repositionFloat());
   if (classifySelection(cleaned) === "too_long") {
     showError("翻译失败", "选区超过 5000 字，请缩短后再翻。不会假翻。", "local");
@@ -86,21 +109,25 @@ export function openSelectionFloat(text: string): void {
 }
 
 function ensure(): void {
-  if (host && root) return;
+  if (host && root && shell) return;
   const mounted = mount("yifan-float");
   host = mounted.host;
   root = mounted.root;
-  const tip = el("div", "tip");
-  tip.setAttribute("role", "dialog");
-  tip.setAttribute("aria-label", "一翻划词浮层");
-
-  const head = el("div", "tip-hd");
   const brand = el("span", "brand-mini");
   brand.append(markImg(16), el("span", undefined, "一翻 · 划词"));
-  langNode = el("span", "lang");
-  head.append(brand, langNode);
+  shell = mountSelectionFloatShell(document, {
+    getLayout: () => session.current(),
+    viewport: currentViewport,
+    contentHeight: measureContentHeight,
+    anchor: selectionAnchor,
+    onLayout: (next) => {
+      if (!host || !session.current()) return;
+      paint(session.commit(next));
+    },
+    onClose: () => closeSelectionFloat(),
+  }, brand);
+  langNode = shell.lang;
 
-  const pair = el("div", "pair");
   srcNode = el("div", "src");
   dstNode = el("div", "dst");
   dstNode.setAttribute("aria-live", "polite");
@@ -110,7 +137,7 @@ function ensure(): void {
   errTitle = el("strong");
   errBody = el("span");
   errNode.append(errTitle, errBody);
-  pair.append(srcNode, dstNode, errNode);
+  shell.pair.append(srcNode, dstNode, errNode);
 
   langRow = el("div", "lang-row");
   langRow.hidden = true;
@@ -133,9 +160,56 @@ function ensure(): void {
   langRow.append(label, select);
 
   actions = el("div", "actions");
-  tip.append(head, pair, langRow, actions);
-  root.append(tip);
-  tip.addEventListener("mousedown", (event) => event.stopPropagation());
+  shell.tip.append(langRow, actions);
+  root.append(shell.tip);
+}
+
+function currentViewport(): { width: number; height: number } {
+  return { width: window.innerWidth, height: window.innerHeight };
+}
+
+function selectionAnchor(layout: SelectionFloatLayout): { left: number; top: number } {
+  const viewport = currentViewport();
+  const rect = selectionRect();
+  return computeFloatPosition({
+    rect: rect
+      ? { left: rect.left, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height }
+      : null,
+    card: selectionFloatRenderedSize(layout, viewport),
+    viewport,
+  });
+}
+
+function measureContentHeight(): number {
+  if (!root) return 0;
+  const pair = root.querySelector<HTMLElement>(".pair");
+  const head = root.querySelector<HTMLElement>(".tip-hd");
+  const lang = root.querySelector<HTMLElement>(".lang-row");
+  const bar = root.querySelector<HTMLElement>(".actions");
+  if (!pair || !head || !bar) return 0;
+  const langHeight = lang && !lang.hidden ? lang.offsetHeight : 0;
+  return pair.scrollHeight + head.offsetHeight + langHeight + bar.offsetHeight + 2;
+}
+
+/** 正文变高时只按当前档位钳进视口，不重新贴选区。 */
+function syncContentBounds(): void {
+  const current = session.current();
+  if (!host || !current) return;
+  paint(session.commit(noteSelectionFloatContent(current, measureContentHeight(), currentViewport())));
+}
+
+function paint(layout: SelectionFloatLayout): void {
+  if (!host) return;
+  host.classList.toggle("is-enlarged", layout.enlarged);
+  host.dataset.enlarged = layout.enlarged ? "true" : "false";
+  host.dataset.moved = layout.moved ? "true" : "false";
+  host.dataset.font = String(SELECTION_FLOAT_FONT_PX);
+  host.style.left = `${layout.left}px`;
+  host.style.top = `${layout.top}px`;
+  host.style.width = layout.enlarged ? SELECTION_FLOAT_ENLARGED_WIDTH_CSS : SELECTION_FLOAT_DEFAULT_WIDTH_CSS;
+  host.style.height = layout.enlarged ? SELECTION_FLOAT_MAX_HEIGHT_CSS : "";
+  host.style.maxHeight = SELECTION_FLOAT_MAX_HEIGHT_CSS;
+  shell?.apply(layout);
 }
 
 function refreshLang(): void {
@@ -169,11 +243,13 @@ async function translate(): Promise<void> {
           dstNode.textContent = text;
           const copy = actions?.querySelector<HTMLButtonElement>("[data-act='copy']");
           if (copy) copy.disabled = !text.trim();
+          syncContentBounds();
         },
       },
     );
     if (token !== runId || !dstNode) return;
     dstNode.classList.remove("live");
+    syncContentBounds();
   } catch (error) {
     if (token !== runId) return;
     if ((error as Error).name === "AbortError") return;
@@ -209,6 +285,7 @@ function setActions(mode: "translate" | "error" | "local"): void {
       button("改语言", "", "lang", () => langRow?.toggleAttribute("hidden")),
       button("关闭", "", "close", () => closeSelectionFloat()),
     );
+    syncContentBounds();
     return;
   }
   if (mode === "error") {
@@ -217,9 +294,11 @@ function setActions(mode: "translate" | "error" | "local"): void {
       button("重试", "", "retry", () => void translate()),
       button("关闭", "", "close", () => closeSelectionFloat()),
     );
+    syncContentBounds();
     return;
   }
   actions.append(button("关闭", "", "close", () => closeSelectionFloat()));
+  syncContentBounds();
 }
 
 function button(label: string, variant: string, act: string, onClick: () => void, disabled = false): HTMLButtonElement {
