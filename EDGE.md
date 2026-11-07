@@ -1,6 +1,6 @@
 # 在 Edge 里加载一翻
 
-一翻 **v0.1.13** 是 Chromium Manifest V3 扩展。Chrome 和 Edge 用同一份 `dist/`，界面相同。没有单独的 Edge 清单，也不加 Firefox 才需要的 `browser_specific_settings`。默认快捷键是 `Alt+T`（整页）、`Alt+S`（截图识译）和 `Alt+E`（划词开/关），在扩展设置里改。`edge://extensions/shortcuts` 仍可改系统级命令，页面触发以扩展内设置为准。
+一翻 **v0.1.14** 是 Chromium Manifest V3 扩展。Chrome 和 Edge 用同一份 `dist/`，界面相同。没有单独的 Edge 清单，也不加 Firefox 才需要的 `browser_specific_settings`。默认快捷键是 `Alt+T`（整页）、`Alt+S`（截图识译）和 `Alt+E`（划词开/关），在扩展设置里改。`edge://extensions/shortcuts` 仍可改系统级命令，页面触发以扩展内设置为准。
 
 默认模型是 `qwen3.7-plus`。划词开着时选完直接翻译，不再先出确认条。
 
@@ -22,7 +22,7 @@ npm run build
 npm run pack
 ```
 
-产物：`release/yifan-0.1.13-mv3.zip`。解压后应直接看到 `manifest.json`。
+产物：`release/yifan-0.1.14-mv3.zip`。解压后应直接看到 `manifest.json`。
 
 ## Edge
 

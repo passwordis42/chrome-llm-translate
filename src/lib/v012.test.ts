@@ -87,14 +87,14 @@ describe("settings ui and edge notes", () => {
     assert.equal(document.querySelector("#custom-model")?.getAttribute("placeholder"), "例如 qwen-plus（留空则用上方精选）");
     assert.equal(document.querySelector("#mode-confirm"), null);
     assert.equal(document.querySelector("#mode-immediate"), null);
-    assert.equal(document.querySelector("#settings-view .sub")?.textContent, "快捷键 / API / 厂商 · v0.1.13");
+    assert.equal(document.querySelector("#settings-view .sub")?.textContent, "快捷键 / API / 厂商 · v0.1.14");
     const home = document.querySelector("#home-view");
     assert.equal(home?.querySelector("#api-key"), null);
     assert.equal(home?.querySelector("#model"), null);
     assert.equal(home?.querySelector("#start-page")?.textContent, "开始");
     assert.equal(home?.querySelector("#stop-page")?.textContent, "停止");
     assert.equal(home?.querySelector("#clear-page")?.textContent, "清除");
-    assert.equal(home?.querySelector(".sub")?.textContent, "整页 AI · v0.1.13");
+    assert.equal(home?.querySelector(".sub")?.textContent, "整页 AI · v0.1.14");
     assert.equal(document.querySelector("#back-home")?.getAttribute("aria-label"), "返回主弹窗");
     assert.equal(document.querySelector("#settings-view h1")?.textContent, "设置");
     assert.match(html, /选中文字后直接翻译/);
@@ -114,10 +114,10 @@ describe("settings ui and edge notes", () => {
       version: string;
       manifest_version: number;
     };
-    assert.equal(manifest.version, "0.1.13");
+    assert.equal(manifest.version, "0.1.14");
     assert.equal(manifest.manifest_version, 3);
     for (const doc of [readme, edge]) {
-      assert.match(doc, /0\.1\.13/);
+      assert.match(doc, /0\.1\.14/);
       assert.match(doc, /edge:\/\/extensions/);
       assert.match(doc, /chrome:\/\/extensions/);
       assert.match(doc, /dist\//);

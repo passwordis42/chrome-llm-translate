@@ -1,6 +1,6 @@
 {
   "name": "yifan",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "private": true,
   "type": "module",
   "description": "一翻 · Chromium MV3 扩展（Chrome / Edge），用千问、OpenAI、火山方舟、DeepSeek 或 Kimi 做划词，并在原文字位替换整页译文",
