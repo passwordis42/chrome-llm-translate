@@ -60,7 +60,7 @@ describe("v0.1.13 selection translates immediately", () => {
     const settings = html.slice(html.indexOf('id="settings-view"'), html.indexOf('id="glossary-view"'));
     assert.match(home, /选中文字后直接翻译/);
     assert.equal(document.querySelector("#home-selection-toggle")?.getAttribute("aria-checked"), "true");
-    assert.equal(document.querySelector("#home-view .sub")?.textContent, "整页 AI · v0.1.13");
+    assert.equal(document.querySelector("#home-view .sub")?.textContent, "整页 AI · v0.1.14");
     assert.equal(home.includes("划词模式"), false);
     assert.equal(home.includes("先确认再翻"), false);
     assert.equal(settings.includes("划词模式"), false);
@@ -70,7 +70,7 @@ describe("v0.1.13 selection translates immediately", () => {
     assert.equal(document.querySelector("#mode-immediate"), null);
     assert.equal(settings.includes('id="home-selection-toggle"'), false);
     assert.equal(settings.includes('id="selection-toggle"'), false);
-    assert.match(settings, /快捷键 \/ API \/ 厂商 · v0\.1\.13/);
+    assert.match(settings, /快捷键 \/ API \/ 厂商 · v0\.1\.14/);
     assert.match(settings, /启用鼠标手势/);
     assert.match(settings, /划词翻译开\/关/);
     assert.match(settings, /源语言/);
@@ -112,7 +112,7 @@ describe("v0.1.13 selection translates immediately", () => {
       version: string;
       description: string;
     };
-    assert.equal(manifest.version, "0.1.13");
+    assert.equal(manifest.version, "0.1.14");
     assert.match(manifest.description, /选完直接翻译/);
     assert.equal(manifest.description.includes("先确认"), false);
   });

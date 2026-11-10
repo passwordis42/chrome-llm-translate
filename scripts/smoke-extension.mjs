@@ -78,7 +78,7 @@ try {
   if (!floatText.includes("一翻 · 划词")) fail(`结果浮层标题不对: ${floatText}`);
   if (floatText.includes("确认翻译") || floatText.includes("插件会把")) fail("划词开着时不该出确认条或假译文");
   await page.locator("#yifan-float").screenshot({ path: path.join(shots, "float-immediate.png") });
-  await page.locator("#yifan-float").getByRole("button", { name: "关闭" }).click();
+  await page.locator("#yifan-float").locator(".actions").getByRole("button", { name: "关闭", exact: true }).click();
   await page.locator("#yifan-float").waitFor({ state: "detached", timeout: 3000 });
 
   await sw.evaluate(async () => {
@@ -113,7 +113,7 @@ try {
     return false;
   });
   if (!cleanedMode) fail("旧的 selectionMode 字段没有被清掉");
-  await page.locator("#yifan-float").getByRole("button", { name: "关闭" }).click();
+  await page.locator("#yifan-float").locator(".actions").getByRole("button", { name: "关闭", exact: true }).click();
   await page.locator("#yifan-float").waitFor({ state: "detached", timeout: 3000 });
 
   await sw.evaluate(async () => {
@@ -141,7 +141,7 @@ try {
   const explicitText = await shadowText(page, "yifan-float");
   if (!explicitText.includes("Hello explicit")) fail(`右键划词没带上选区: ${explicitText}`);
   if (!explicitText.includes("不会假翻")) fail("右键划词不该假翻");
-  await page.locator("#yifan-float").getByRole("button", { name: "关闭" }).click();
+  await page.locator("#yifan-float").locator(".actions").getByRole("button", { name: "关闭", exact: true }).click();
   await explicit;
 
   await sw.evaluate(async () => {
@@ -278,7 +278,7 @@ try {
   const selectionHint = (await popup.locator("#home-view .toggle-row .t-desc").first().innerText()).trim();
   if (selectionHint !== "选中文字后直接翻译") fail(`划词说明不对: ${selectionHint}`);
   if ((await popup.locator("#home-selection-toggle").getAttribute("aria-checked")) !== "true") fail("划词开关默认应开启");
-  if ((await popup.locator("#home-view .sub").innerText()).trim() !== "整页 AI · v0.1.13") fail("主弹窗版本不对");
+  if ((await popup.locator("#home-view .sub").innerText()).trim() !== "整页 AI · v0.1.14") fail("主弹窗版本不对");
   await popup.screenshot({ path: path.join(shots, "popup-home.png") });
   await popup.locator("#hotkey-tip").waitFor();
   const tip = (await popup.locator("#hotkey-tip").innerText()).replace(/\s+/g, " ");
@@ -310,7 +310,7 @@ try {
   if (settingsCopy.includes("划词模式") || settingsCopy.includes("先确认再翻") || settingsCopy.includes("划完即翻")) {
     fail(`设置页还留着划词模式: ${settingsCopy}`);
   }
-  if ((await popup.locator("#settings-view .sub").innerText()).trim() !== "快捷键 / API / 厂商 · v0.1.13") fail("设置页版本不对");
+  if ((await popup.locator("#settings-view .sub").innerText()).trim() !== "快捷键 / API / 厂商 · v0.1.14") fail("设置页版本不对");
   await popup.screenshot({ path: path.join(shots, "settings.png") });
   await popup.getByRole("button", { name: "测试连接" }).click();
   await popup.getByText("请先填写 API Key。不会假翻。").waitFor();
