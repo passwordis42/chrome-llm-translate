@@ -550,3 +550,84 @@ td.dst { font-weight: 600; }
 .add .btn { flex: none; padding: 9px 14px; white-space: nowrap; }
 .glossary-error { color: var(--danger); font-size: 12px; margin: -4px 0 8px; }
 .empty { text-align: center; font-size: 12px; color: var(--muted); padding: 8px 4px 2px; }
+
+.lang-card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  padding: 8px 10px 9px;
+  margin: 10px 0;
+}
+.lang-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 36px minmax(0, 1fr);
+  gap: 6px;
+  align-items: end;
+}
+.lang-field { min-width: 0; display: block; }
+.lang-field > span {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.lang-field select {
+  width: 100%;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 8px;
+  min-height: 32px;
+  background: #fff;
+}
+.detect-pill {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid #c8d7fb;
+  border-radius: 999px;
+  padding: 2px 7px;
+}
+.swap-btn {
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 16px;
+}
+.swap-btn:disabled { opacity: 0.42; cursor: not-allowed; }
+.lang-hint, .popup-notice {
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: #7a4e0e;
+  background: #fbf6e8;
+  border: 1px solid #ead9b0;
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+.tool-btn.accent {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  min-height: 36px;
+  border: 1px solid #c8d7fb;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 9px;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 9px 10px;
+}
+.tool-btn.accent span { margin-left: auto; font-weight: 500; }
+#hotkey-note { display: block; margin-top: 4px; }
+.hk-sub { font-size: 10px; color: var(--muted); margin-top: 2px; }

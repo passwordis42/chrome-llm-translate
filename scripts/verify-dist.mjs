@@ -86,7 +86,8 @@ const settings = popup.slice(popup.indexOf('id="settings-view"'), popup.indexOf(
 check(home.includes("快捷") && home.includes("截图识译") && home.includes("Alt+T") && home.includes("Alt+S") && home.includes("Alt+E") && home.includes("⌞"), "home shortcuts");
 check(!home.includes("未设置") && !popup.includes("未设置"), "tip does not say unset");
 check(home.includes("选中文字后直接翻译") && home.includes('id="home-selection-toggle"'), "home keeps the selection switch");
-check(!home.includes("先确认再翻") && !home.includes("源语言") && !home.includes("划词模式"), "home has no language or selection mode");
+check(!home.includes("先确认再翻") && !home.includes("划词模式"), "home has no selection mode");
+check(home.includes("互换语言方向") && home.includes("输入翻译"), "home language swap and input translate");
 check(!home.includes("api-key") && !home.includes("qwen3.7-plus") && !home.includes('id="model"'), "home has no key or model");
 check(!settings.includes("划词模式") && !settings.includes("先确认再翻") && !settings.includes("划完即翻"), "settings has no selection mode");
 check(!settings.includes('id="mode-confirm"') && !settings.includes('id="mode-immediate"'), "settings has no mode buttons");

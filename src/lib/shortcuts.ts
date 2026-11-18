@@ -1,6 +1,6 @@
 /** 扩展自己记住的三条快捷键。展示和改键以这里为准，不读 chrome.commands。 */
 
-export const SHORTCUT_IDS = ["page", "crop", "selection"] as const;
+export const SHORTCUT_IDS = ["page", "crop", "selection", "swap", "input"] as const;
 
 export type ShortcutId = (typeof SHORTCUT_IDS)[number];
 
@@ -8,12 +8,16 @@ export const SHORTCUT_LABELS: Record<ShortcutId, string> = {
   page: "整页开始/继续",
   crop: "截图识译",
   selection: "划词翻译开/关",
+  swap: "互换语言方向",
+  input: "打开输入翻译",
 };
 
 export interface ManagedShortcuts {
   page: string;
   crop: string;
   selection: string;
+  swap: string;
+  input: string;
 }
 
 export interface Chord {
@@ -38,6 +42,8 @@ export const DEFAULT_SHORTCUTS: ManagedShortcuts = {
   page: "Alt+T",
   crop: "Alt+S",
   selection: "Alt+E",
+  swap: "Alt+Shift+Y",
+  input: "Alt+Shift+I",
 };
 
 const NAMED_KEYS = [
@@ -212,6 +218,11 @@ export function shortcutsStorageMatches(raw: unknown, normalized: ManagedShortcu
 
 export function formatHotkeyTip(shortcuts: ManagedShortcuts): string {
   return `${shortcuts.page} 整页 · ${shortcuts.crop} 识译 · ${shortcuts.selection} 划词 · 右键 ⌝/⌟/⌞`;
+}
+
+/** 网页内自管键。不是 chrome.commands，也不是系统全局热键。 */
+export function formatPageHotkeyNote(shortcuts: ManagedShortcuts): string {
+  return `网页内 ${shortcuts.swap} 互换方向，${shortcuts.input} 打开输入翻译。可在扩展设置改键。不是浏览器命令，也不是系统全局热键。是否与浏览器或输入法冲突未在本机验证。`;
 }
 
 export function createShortcutGate(windowMs = 350): (action: ShortcutId, now?: number) => boolean {

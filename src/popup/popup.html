@@ -37,6 +37,23 @@
         <button class="btn" id="stop-page" type="button" disabled>停止</button>
         <button class="btn" id="clear-page" type="button" disabled>清除</button>
       </div>
+      <div class="lang-card" id="home-lang">
+        <div class="sec-title">当前方向</div>
+        <div class="lang-pair">
+          <label class="lang-field">
+            <span>源语言</span>
+            <select id="home-source" aria-label="源语言"></select>
+            <span class="detect-pill" id="home-detect" hidden></span>
+          </label>
+          <button class="swap-btn" id="home-swap" type="button" aria-label="互换语言方向">⇄</button>
+          <label class="lang-field">
+            <span>目标语言</span>
+            <select id="home-target" aria-label="目标语言"></select>
+          </label>
+        </div>
+        <p class="lang-hint" id="home-lang-hint" hidden></p>
+      </div>
+      <p class="popup-notice" id="home-page-notice" hidden></p>
       <div class="sec" id="shortcuts">
         <div class="sec-title">快捷</div>
         <div class="toggle-row">
@@ -53,6 +70,7 @@
           </div>
           <button class="switch" id="home-force-select" type="button" role="switch" aria-checked="false" aria-label="允许划选被禁文字，已关闭"></button>
         </div>
+        <button class="tool-btn accent" id="open-input" type="button">输入翻译<span>打开 →</span></button>
         <button class="link-btn" id="home-open-glossary" type="button">
           术语本
           <span>固定译法优先 →</span>
@@ -62,6 +80,7 @@
       </div>
       <div class="hotkey-tip" id="hotkey-tip" data-v="0.1.14">
         <strong id="hotkey-page">Alt+T</strong> 整页 · <strong id="hotkey-crop">Alt+S</strong> 识译 · <strong id="hotkey-selection">Alt+E</strong> 划词 · 右键 <strong>⌝</strong>/<strong>⌟</strong>/<strong>⌞</strong>
+        <span id="hotkey-note"></span>
       </div>
       <div class="foot">
         <button class="settings-link" id="settings-link" type="button">设置 →</button>
@@ -160,6 +179,22 @@
           </div>
           <span class="hk-key" id="hk-selection" aria-label="当前键 Alt+E">Alt+E</span>
           <button class="btn-sm" id="rebind-selection" type="button">改键</button>
+        </div>
+        <div class="hk-row">
+          <div class="hk-label">
+            <div class="hk-title">互换语言方向</div>
+            <div class="hk-sub">网页内快捷键，不是浏览器命令</div>
+          </div>
+          <span class="hk-key" id="hk-swap" aria-label="当前键 Alt+Shift+Y">Alt+Shift+Y</span>
+          <button class="btn-sm" id="rebind-swap" type="button">改键</button>
+        </div>
+        <div class="hk-row">
+          <div class="hk-label">
+            <div class="hk-title">打开输入翻译</div>
+            <div class="hk-sub">网页内快捷键，不是浏览器命令</div>
+          </div>
+          <span class="hk-key" id="hk-input" aria-label="当前键 Alt+Shift+I">Alt+Shift+I</span>
+          <button class="btn-sm" id="rebind-input" type="button">改键</button>
         </div>
         <div class="hk-foot">
           <p class="hk-note">也可在浏览器扩展快捷键页改系统级命令；以扩展内设置为准。</p>

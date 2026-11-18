@@ -30,7 +30,13 @@ function key(partial: Partial<KeySnapshot> & Pick<KeySnapshot, "key" | "code">):
 describe("managed shortcuts", () => {
   it("defaults to Alt+T, Alt+S and Alt+E and prints them on the tip", () => {
     const shortcuts = defaultShortcuts();
-    assert.deepEqual(shortcuts, { page: "Alt+T", crop: "Alt+S", selection: "Alt+E" });
+    assert.deepEqual(shortcuts, {
+      page: "Alt+T",
+      crop: "Alt+S",
+      selection: "Alt+E",
+      swap: "Alt+Shift+Y",
+      input: "Alt+Shift+I",
+    });
     assert.equal(formatHotkeyTip(shortcuts), "Alt+T 整页 · Alt+S 识译 · Alt+E 划词 · 右键 ⌝/⌟/⌞");
     assert.equal(formatHotkeyTip(shortcuts).includes("未设置"), false);
     assert.equal(normalizeSettings({}).shortcuts.page, "Alt+T");
@@ -99,7 +105,9 @@ describe("managed shortcuts", () => {
     assert.equal(repaired.page, "Alt+S");
     assert.equal(repaired.crop, "Alt+T");
     assert.equal(repaired.selection, "Alt+E");
-    assert.equal(new Set(Object.values(repaired)).size, 3);
+    assert.equal(repaired.swap, "Alt+Shift+Y");
+    assert.equal(repaired.input, "Alt+Shift+I");
+    assert.equal(new Set(Object.values(repaired)).size, 5);
   });
 
   it("collapses the command channel and the page listener for one keypress", () => {

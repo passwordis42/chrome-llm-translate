@@ -191,8 +191,9 @@ describe("force select settings ui", () => {
     const homeChildren = [...(home.querySelector("#shortcuts")?.children ?? [])];
     const selectionAt = homeChildren.findIndex((node) => node.querySelector("#home-selection-toggle"));
     const forceAt = homeChildren.findIndex((node) => node.contains(toggle));
+    const inputAt = homeChildren.findIndex((node) => node.id === "open-input");
     const glossaryAt = homeChildren.findIndex((node) => node.id === "home-open-glossary");
-    assert.ok(selectionAt >= 0 && forceAt === selectionAt + 1 && glossaryAt === forceAt + 1);
+    assert.ok(selectionAt >= 0 && forceAt === selectionAt + 1 && inputAt === forceAt + 1 && glossaryAt === inputAt + 1);
     assert.equal(document.querySelector("#settings-view #force-select-toggle"), null);
     assert.equal(document.querySelector("#settings-view #selection-toggle"), null);
     const gesture = document.querySelector("#gesture-toggle");

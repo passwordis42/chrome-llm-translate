@@ -233,7 +233,13 @@ async function translateCrop(imageDataUrl: unknown) {
       settings,
       signal: new AbortController().signal,
     });
-    return { ok: true, source: result.source, translation: result.translation };
+    return {
+      ok: true,
+      source: result.source,
+      translation: result.translation,
+      detection: result.detection,
+      code: result.code,
+    };
   } catch (error) {
     return {
       ok: false,
@@ -278,7 +284,7 @@ async function runPort(port: chrome.runtime.Port, message: StartMessage, signal:
   };
   try {
     const settings = await readSettings();
-    await runTranslationJob({
+    const detected = await runTranslationJob({
       text: message.text,
       settings,
       sourceLang: message.sourceLang,
@@ -286,7 +292,15 @@ async function runPort(port: chrome.runtime.Port, message: StartMessage, signal:
       signal,
       onText: (text) => post({ type: "text", text }),
     });
-    if (!signal.aborted) post({ type: "done" });
+    if (!signal.aborted) {
+      post({
+        type: "done",
+        detection: detected.outcome === "code" || detected.outcome === "unknown" || detected.outcome === "plain" || detected.outcome === "legacy"
+          ? detected.outcome
+          : "none",
+        code: detected.code ?? "",
+      });
+    }
   } catch (error) {
     if (signal.aborted || (error instanceof Error && error.name === "AbortError")) return;
     post({
@@ -294,6 +308,7 @@ async function runPort(port: chrome.runtime.Port, message: StartMessage, signal:
       title: error instanceof TranslateError ? error.title : "翻译失败",
       message: error instanceof Error ? error.message : "翻译失败。不会假翻。",
       fatal: error instanceof TranslateError ? error.fatal : true,
+      protocol: error instanceof TranslateError && error.code === "protocol",
     });
   }
 }

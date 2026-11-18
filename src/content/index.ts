@@ -1,11 +1,14 @@
 import { dismissConfirm, isConfirmOpen, showConfirm, showNotice } from "./confirm.ts";
 import { dismissOcrUi, isOcrUiActive, startCrop } from "./crop.ts";
 import { isYifanEvent } from "./dom.ts";
-import { closeSelectionFloat, currentFloatText, initFloat, isFloatOpen, openSelectionFloat, repositionFloat } from "./float.ts";
+import { abandonSelectionResult, closeSelectionFloat, currentFloatText, initFloat, isFloatOpen, openSelectionFloat, repositionFloat } from "./float.ts";
+import { cancelInputTranslation, closeInputFloat, initInputFloat, inputFloatText, isInputFloatOpen, openInputFloat, refreshInputFloat } from "./input-float.ts";
+import { bindDirectionReader, detectionBook, directionOf } from "./detect-state.ts";
 import { mountPageGesture } from "./gesture.ts";
-import { clearInlinePage, initPage, isInlinePageOpen, pageStatus, startInlinePage, stopInlinePage, syncToolbarPair } from "./pageview.ts";
-import { missingKeyNotice, type ShortcutAction } from "../lib/commands.ts";
-import { createShortcutGate, matchShortcut } from "../lib/shortcuts.ts";
+import { clearInlinePage, initPage, invalidatePageForDirectionChange, isInlinePageOpen, pageStatus, startInlinePage, stopInlinePage, syncToolbarPair } from "./pageview.ts";
+import { missingKeyNotice } from "../lib/commands.ts";
+import { createShortcutGate, matchShortcut, type ShortcutId } from "../lib/shortcuts.ts";
+import { swapDirection } from "../lib/direction.ts";
 import type { PageControlStatus } from "../lib/inpage.ts";
 import type { ToPageMessage } from "../lib/messages.ts";
 import { cleanSelection, selectionOffer } from "../lib/selection.ts";
@@ -56,6 +59,14 @@ function boot(): void {
     },
   });
   initPage({ getSettings: () => settings });
+  bindDirectionReader(() => directionOf(settings));
+  initInputFloat({
+    getSettings: () => settings,
+    persistDirection: async (sourceLang, targetLang) => {
+      const current = await readSettings();
+      await writeSettings({ ...current, sourceLang, targetLang });
+    },
+  });
 
   void readSettings()
     .then((stored) => {
@@ -71,9 +82,16 @@ function boot(): void {
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local" || !changes[STORAGE_KEY]) return;
+    const previous = settings;
     settings = normalizeSettings(changes[STORAGE_KEY].newValue);
     ready = true;
     forceSelect.setEnabled(settings.forceSelectEnabled);
+    if (previous.sourceLang !== settings.sourceLang || previous.targetLang !== settings.targetLang) {
+      detectionBook.invalidateDirection(directionOf(settings));
+      invalidatePageForDirectionChange();
+      abandonSelectionResult();
+      cancelInputTranslation();
+    }
     syncToolbarPair();
   });
 
@@ -109,6 +127,10 @@ function boot(): void {
   document.addEventListener("keyup", (event) => {
     if (event.key === "Escape") {
       if (isConfirmOpen()) return;
+      if (isInputFloatOpen()) {
+        closeInputFloat();
+        return;
+      }
       if (dismissOcrUi()) return;
       if (isFloatOpen()) {
         closeSelectionFloat();
@@ -135,7 +157,7 @@ function boot(): void {
     const active = document.activeElement;
     if (active instanceof HTMLElement) {
       if (/^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName)) return;
-      if (active.id === "yifan-float" || active.id === "yifan-dialog") return;
+      if (active.id === "yifan-float" || active.id === "yifan-dialog" || active.id === "yifan-input") return;
     }
     const text = cleanSelection(window.getSelection()?.toString() ?? "");
     const action = selectionOffer({
@@ -195,6 +217,12 @@ function boot(): void {
       await runShortcutAction("selection");
       return;
     }
+    if (message.type === "open-input-translate") {
+      openInputFloat();
+      return { ok: true };
+    }
+    if (message.type === "swap-direction") return swapFromPage();
+    if (message.type === "direction-status") return directionStatus();
     if (message.type === "show-page-google") {
       closeSelectionFloat();
       const confirmed = await showConfirm("google");
@@ -208,7 +236,15 @@ function boot(): void {
     }
   }
 
-  async function runShortcutAction(action: ShortcutAction): Promise<void> {
+  async function runShortcutAction(action: ShortcutId): Promise<void> {
+    if (action === "swap") {
+      await swapFromPage();
+      return;
+    }
+    if (action === "input") {
+      openInputFloat();
+      return;
+    }
     if (action === "selection") {
       await toggleSelection();
       return;
@@ -247,6 +283,37 @@ function boot(): void {
     if (opened === "empty") {
       await showNotice("一翻 · 整页 AI", "这一页没有找到可翻译的段落。没有改动原文。");
     }
+  }
+
+  function swapContext(): { entry: "input" | "selection"; text: string } | null {
+    if (isInputFloatOpen()) return { entry: "input", text: inputFloatText() };
+    if (isFloatOpen()) return { entry: "selection", text: currentFloatText() };
+    return null;
+  }
+
+  function directionStatus(): { ok: true; canSwap: boolean; message: string; code: string } {
+    const direction = directionOf(settings);
+    const context = swapContext();
+    const code = context
+      ? detectionBook.usableCode(direction, context.entry, context.text)
+      : detectionBook.usableCode(direction);
+    const decision = swapDirection(direction, code);
+    return { ok: true, canSwap: decision.ok, message: decision.ok ? "" : decision.message, code: code ?? "" };
+  }
+
+  async function swapFromPage(): Promise<{ ok: boolean; message?: string }> {
+    const status = directionStatus();
+    if (!status.canSwap) {
+      await showNotice("一翻 · 语言方向", status.message);
+      refreshInputFloat();
+      return { ok: false, message: status.message };
+    }
+    const direction = directionOf(settings);
+    const next = swapDirection(direction, status.code || null);
+    if (!next.ok) return { ok: false, message: next.message };
+    const current = await readSettings().catch(() => settings);
+    await writeSettings({ ...current, sourceLang: next.sourceLang, targetLang: next.targetLang });
+    return { ok: true };
   }
 
   async function beginCrop(): Promise<void> {

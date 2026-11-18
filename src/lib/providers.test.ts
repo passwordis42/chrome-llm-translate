@@ -220,6 +220,7 @@ describe("provider routing", () => {
     const settings = defaultSettings();
     settings.provider = "volcano";
     settings.apiKey = "ark-key";
+    settings.sourceLang = "en";
     settings.model = "ep-20241104abcdef";
     let requestUrl = "";
     let sentModel = "";
@@ -244,6 +245,7 @@ describe("provider routing", () => {
   it("keeps qwen vision on dashscope and refuses deepseek before any request", async () => {
     const qwen = defaultSettings();
     qwen.apiKey = "sk-qwen";
+    qwen.sourceLang = "en";
     const urls: string[] = [];
     const fetchImpl: typeof fetch = async (input) => {
       urls.push(String(input));

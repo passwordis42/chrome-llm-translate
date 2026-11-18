@@ -14,12 +14,14 @@ import {
   writeSettings,
   type Settings,
 } from "../lib/settings.ts";
+import { swapDirection } from "../lib/direction.ts";
 import {
   SHORTCUT_IDS,
   assignShortcut,
   chordFromKey,
   defaultShortcuts,
   formatChord,
+  formatPageHotkeyNote,
   type ManagedShortcuts,
   type ShortcutId,
 } from "../lib/shortcuts.ts";
@@ -57,12 +59,24 @@ const homeForce = document.querySelector<HTMLButtonElement>("#home-force-select"
 const hotkeyPage = document.querySelector<HTMLElement>("#hotkey-page");
 const hotkeyCrop = document.querySelector<HTMLElement>("#hotkey-crop");
 const hotkeySelection = document.querySelector<HTMLElement>("#hotkey-selection");
+const homeSource = document.querySelector<HTMLSelectElement>("#home-source");
+const homeTarget = document.querySelector<HTMLSelectElement>("#home-target");
+const homeSwap = document.querySelector<HTMLButtonElement>("#home-swap");
+const homeDetect = document.querySelector<HTMLElement>("#home-detect");
+const homeLangHint = document.querySelector<HTMLElement>("#home-lang-hint");
+const homePageNotice = document.querySelector<HTMLElement>("#home-page-notice");
+const openInput = document.querySelector<HTMLButtonElement>("#open-input");
+const hotkeyNote = document.querySelector<HTMLElement>("#hotkey-note");
 const hkPage = document.querySelector<HTMLElement>("#hk-page");
 const hkCrop = document.querySelector<HTMLElement>("#hk-crop");
 const hkSelection = document.querySelector<HTMLElement>("#hk-selection");
 const rebindPage = document.querySelector<HTMLButtonElement>("#rebind-page");
 const rebindCrop = document.querySelector<HTMLButtonElement>("#rebind-crop");
 const rebindSelection = document.querySelector<HTMLButtonElement>("#rebind-selection");
+const hkSwap = document.querySelector<HTMLElement>("#hk-swap");
+const hkInput = document.querySelector<HTMLElement>("#hk-input");
+const rebindSwap = document.querySelector<HTMLButtonElement>("#rebind-swap");
+const rebindInput = document.querySelector<HTMLButtonElement>("#rebind-input");
 const restoreShortcutsButton = document.querySelector<HTMLButtonElement>("#restore-shortcuts");
 const hkError = document.querySelector<HTMLElement>("#hk-error");
 const ocrButton = document.querySelector<HTMLButtonElement>("#screenshot-ocr");
@@ -90,6 +104,8 @@ if (
   !testButton || !saveButton || !rows || !termSource || !termTarget || !glossaryError ||
   !homeSelection || !homeForce || !hotkeyPage || !hotkeyCrop || !hotkeySelection || !ocrButton || !ocrNote ||
   !hkPage || !hkCrop || !hkSelection || !rebindPage || !rebindCrop || !rebindSelection ||
+  !homeSource || !homeTarget || !homeSwap || !homeDetect || !homeLangHint || !homePageNotice || !openInput || !hotkeyNote ||
+  !hkSwap || !hkInput || !rebindSwap || !rebindInput ||
   !restoreShortcutsButton || !hkError
 ) {
   throw new Error("设置页结构不完整");
@@ -105,10 +121,22 @@ const ui = {
   rows, termSource, termTarget, glossaryError,
   homeSelection, homeForce, hotkeyPage, hotkeyCrop, hotkeySelection, ocrButton, ocrNote,
   hkPage, hkCrop, hkSelection, rebindPage, rebindCrop, rebindSelection, restoreShortcutsButton, hkError,
+  homeSource, homeTarget, homeSwap, homeDetect, homeLangHint, homePageNotice, openInput, hotkeyNote,
+  hkSwap, hkInput, rebindSwap, rebindInput,
 };
 
 fillSelect(ui.sourceSelect, SOURCE_LANGUAGES);
 fillSelect(ui.targetSelect, TARGET_LANGUAGES);
+fillSelect(ui.homeSource, SOURCE_LANGUAGES);
+fillSelect(ui.homeTarget, TARGET_LANGUAGES);
+bindLang(ui.homeSource, "sourceLang");
+bindLang(ui.homeTarget, "targetLang");
+ui.homeSwap.addEventListener("click", () => {
+  void swapFromPopup();
+});
+ui.openInput.addEventListener("click", () => {
+  void openInputFromPopup();
+});
 
 let managedShortcuts: ManagedShortcuts = defaultShortcuts();
 let listeningShortcut: ShortcutId | null = null;
@@ -116,11 +144,15 @@ const shortcutKeys: Record<ShortcutId, HTMLElement> = {
   page: ui.hkPage,
   crop: ui.hkCrop,
   selection: ui.hkSelection,
+  swap: ui.hkSwap,
+  input: ui.hkInput,
 };
 const rebindButtons: Record<ShortcutId, HTMLButtonElement> = {
   page: ui.rebindPage,
   crop: ui.rebindCrop,
   selection: ui.rebindSelection,
+  swap: ui.rebindSwap,
+  input: ui.rebindInput,
 };
 
 let openedAsTab = false;
@@ -263,7 +295,7 @@ function fillSelect(select: HTMLSelectElement, options: ReadonlyArray<{ code: st
   for (const option of options) {
     const node = document.createElement("option");
     node.value = option.code;
-    node.textContent = option.label;
+    node.textContent = option.code === "auto" ? "自动识别" : option.label;
     select.append(node);
   }
 }
@@ -316,6 +348,8 @@ function fillModelSelect(tiers: ReadonlyArray<{ label: string; models: readonly 
 function applyShortcuts(settings: Settings): void {
   ui.sourceSelect.value = settings.sourceLang;
   ui.targetSelect.value = settings.targetLang;
+  ui.homeSource.value = settings.sourceLang;
+  ui.homeTarget.value = settings.targetLang;
   applySelectionSwitch(settings.selectionEnabled);
   applyForceSelectSwitch(settings.forceSelectEnabled);
   applyGestureSwitch(settings.gestureEnabled);
@@ -607,6 +641,38 @@ function renderHotkeyTip(shortcuts: ManagedShortcuts): void {
   ui.hotkeyPage.textContent = shortcuts.page;
   ui.hotkeyCrop.textContent = shortcuts.crop;
   ui.hotkeySelection.textContent = shortcuts.selection;
+  ui.hotkeyNote.textContent = formatPageHotkeyNote(shortcuts);
+}
+
+async function swapFromPopup(): Promise<void> {
+  const tab = await activeWebTab();
+  if (tab) {
+    const response = await deliver(tab.id, { type: "swap-direction" }) as { ok?: boolean; message?: string } | undefined;
+    if (response && response.ok === false && response.message) {
+      ui.homeLangHint.hidden = false;
+      ui.homeLangHint.textContent = response.message;
+    }
+    return;
+  }
+  const current = await readSettings();
+  const next = swapDirection(current, null);
+  if (!next.ok) {
+    ui.homePageNotice.hidden = false;
+    ui.homePageNotice.textContent = next.message;
+    return;
+  }
+  await writeSettings({ ...current, sourceLang: next.sourceLang, targetLang: next.targetLang });
+}
+
+async function openInputFromPopup(): Promise<void> {
+  const tab = await activeWebTab();
+  if (!tab) {
+    ui.homePageNotice.hidden = false;
+    ui.homePageNotice.textContent = "当前页无法使用输入翻译。请在普通网页（http/https 顶层页面）中打开。浏览器内部页、扩展商店、本地文件等受限页面不可用。按钮仍保留，没有打开浮窗。";
+    return;
+  }
+  ui.homePageNotice.hidden = true;
+  await deliver(tab.id, { type: "open-input-translate" });
 }
 
 function renderShortcutRows(): void {

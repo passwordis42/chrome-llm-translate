@@ -9,8 +9,8 @@ export interface StartMessage {
 
 export type PortOutbound =
   | { type: "text"; text: string }
-  | { type: "done" }
-  | { type: "error"; title: string; message: string; fatal: boolean };
+  | { type: "done"; detection: "code" | "unknown" | "plain" | "legacy" | "none"; code: string }
+  | { type: "error"; title: string; message: string; fatal: boolean; protocol?: boolean };
 
 export interface TestConnectionMessage {
   type: "test-connection";
@@ -58,6 +58,18 @@ export interface ToggleSelectionMessage {
   via?: "command";
 }
 
+export interface OpenInputMessage {
+  type: "open-input-translate";
+}
+
+export interface SwapDirectionMessage {
+  type: "swap-direction";
+}
+
+export interface DirectionStatusMessage {
+  type: "direction-status";
+}
+
 export interface ShortcutNoticeMessage {
   type: "shortcut-notice";
   title: string;
@@ -86,4 +98,7 @@ export type ToPageMessage =
   | PageAiControlMessage
   | StartCropMessage
   | ToggleSelectionMessage
-  | ShortcutNoticeMessage;
+  | ShortcutNoticeMessage
+  | OpenInputMessage
+  | SwapDirectionMessage
+  | DirectionStatusMessage;

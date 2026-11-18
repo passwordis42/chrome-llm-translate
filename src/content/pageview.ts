@@ -18,10 +18,11 @@ import {
   type PageControlStatus,
   type TextSnapshot,
 } from "../lib/inpage.ts";
-import { pairLabel } from "../lib/languages.ts";
+import { shortLabel } from "../lib/languages.ts";
 import type { Settings } from "../lib/settings.ts";
 import { copyText, el, markImg, mount } from "./dom.ts";
 import { requestTranslation, type StreamError } from "./session.ts";
+import { detectionBook } from "./detect-state.ts";
 
 export interface PageDeps {
   getSettings: () => Settings;
@@ -88,6 +89,14 @@ export function stopInlinePage(): void {
   setHint(tracked.some((block) => !done.has(block.id)), token);
 }
 
+export function invalidatePageForDirectionChange(): void {
+  generation += 1;
+  abort?.abort();
+  abort = null;
+  stopped = true;
+  releaseUnfinished(queued, done);
+}
+
 export function clearInlinePage(): void {
   generation += 1;
   abort?.abort();
@@ -131,7 +140,7 @@ export async function startInlinePage(): Promise<"empty" | "started" | "busy"> {
   abort = new AbortController();
   stopped = false;
   lastError = "";
-  renderBar(tracked[0]?.text ?? "");
+  renderBar();
   bindViewport(token);
   void pump(token);
   return "started";
@@ -290,10 +299,12 @@ async function translateBatch(batch: readonly PageBlock[], token: number): Promi
     if (!block) continue;
     setStatus(`正在翻译可见区 ${index + 1}/${batch.length}`, token, "run");
     const settings = deps.getSettings();
+    const direction = { sourceLang: settings.sourceLang, targetLang: settings.targetLang };
+    const detectToken = detectionBook.begin("page", block.id, block.text, direction);
     try {
-      await requestTranslation(
+      const detected = await requestTranslation(
         block.text,
-        { sourceLang: settings.sourceLang, targetLang: settings.targetLang },
+        direction,
         {
           signal,
           onText: (text) => {
@@ -303,9 +314,21 @@ async function translateBatch(batch: readonly PageBlock[], token: number): Promi
           },
         },
       );
+      if (token === generation && (detected.detection === "code" || detected.detection === "unknown")) {
+        detectionBook.commit(
+          detectToken,
+          block.text,
+          direction,
+          detected.detection === "code" ? detected.code : null,
+          detected.detection === "unknown",
+        );
+      } else {
+        detectionBook.drop(detectToken);
+      }
       done.add(block.id);
       queued.delete(block.id);
     } catch (error) {
+      detectionBook.drop(detectToken);
       queued.delete(block.id);
       if (token !== generation || signal.aborted || (error as Error).name === "AbortError") return;
       done.add(block.id);
@@ -335,7 +358,7 @@ function paintAnchor(anchor: Element): void {
   replaceInPlace(snapshot, text);
 }
 
-function renderBar(sample: string): void {
+function renderBar(): void {
   const settings = deps?.getSettings();
   const mounted = mount("yifan-inline-bar");
   barHost = mounted.host;
@@ -349,7 +372,7 @@ function renderBar(sample: string): void {
   left.append(markImg(28), titles);
 
   const right = el("div", "right");
-  pairText = settings ? pairLabel(settings.sourceLang, settings.targetLang, sample) : "自动 → 中文";
+  pairText = settings ? pagePair(settings) : "自动识别 → 中文";
   const chip = el("span", "chip", pairText);
   chipNode = chip;
   const resume = el("button", "btn primary", "继续翻译");
@@ -419,10 +442,15 @@ function paintChrome(token: number): void {
   if (stopButton?.isConnected) stopButton.hidden = !actions.stop;
 }
 
+function pagePair(settings: Settings): string {
+  const left = settings.sourceLang === "auto" ? "自动识别" : shortLabel(settings.sourceLang);
+  return `${left} → ${shortLabel(settings.targetLang)}`;
+}
+
 export function syncToolbarPair(): void {
   const settings = deps?.getSettings();
   if (!settings || !barHost) return;
-  pairText = pairLabel(settings.sourceLang, settings.targetLang, tracked[0]?.text ?? "");
+  pairText = pagePair(settings);
   paintChrome(generation);
 }
 

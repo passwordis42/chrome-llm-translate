@@ -7,6 +7,7 @@ const HOST_IDS = new Set([
   "yifan-crop",
   "yifan-ocr",
   "yifan-toast",
+  "yifan-input",
 ]);
 
 export function mount(id: string): { host: HTMLDivElement; root: ShadowRoot } {
