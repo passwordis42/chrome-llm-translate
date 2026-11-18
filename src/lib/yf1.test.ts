@@ -123,12 +123,16 @@ describe("YF1 strict auto protocol", () => {
     }
   });
 
-  it("does not scan or strip when the source language is already specific", () => {
+  it("M9 and M11 leave a specific-source body untouched, including a YF1 prefix", () => {
     assert.equal(protocolModeForSource("ja"), "plain-specific");
     assert.equal(protocolModeForSource("auto"), "strict-auto");
-    const { shown, result } = run("plain-specific", ["YF1 en\n用户正文以协议样开头"]);
-    assert.equal(result.outcome, "plain");
-    assert.equal(result.code, null);
-    assert.equal(shown, "YF1 en\n用户正文以协议样开头");
+    assert.equal(protocolModeForSource("auto"), "strict-auto");
+    const prefixed = run("plain-specific", ["YF1 en\n用户正文以协议样开头"]);
+    assert.equal(prefixed.result.outcome, "plain");
+    assert.equal(prefixed.result.code, null);
+    assert.equal(prefixed.shown, "YF1 en\n用户正文以协议样开头");
+    const embedded = run("plain-specific", ["YF1 ja\n仍是用户正文"]);
+    assert.equal(embedded.shown, "YF1 ja\n仍是用户正文");
+    assert.equal(embedded.result.code, null);
   });
 });

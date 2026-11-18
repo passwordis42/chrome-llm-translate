@@ -102,11 +102,9 @@ export function createDetectionBook(): DetectionBook {
       }
     },
     invalidateDirection(direction) {
-      for (const record of records.values()) {
+      for (const [id, record] of records) {
         if (record.direction.sourceLang !== direction.sourceLang || record.direction.targetLang !== direction.targetLang) {
-          record.usable = false;
-          record.code = null;
-          record.unknown = false;
+          records.delete(id);
         }
       }
     },

@@ -68,6 +68,35 @@ describe("detection binding", () => {
     assert.equal(book.usableCode(autoZh, "page", "今日"), null);
   });
 
+  it("M7 drops a late commit after the direction has changed", () => {
+    const book = createDetectionBook();
+    const token = book.begin("input", "input", "hello", autoZh);
+    book.invalidateDirection({ sourceLang: "en", targetLang: "zh" });
+    book.commit(token, "hello", autoZh, "ja", false);
+    assert.equal(book.usableCode(autoZh, "input", "hello"), null);
+    assert.equal(book.usableCode({ sourceLang: "en", targetLang: "zh" }, "input", "hello"), null);
+  });
+
+  it("M8 does not let a failed second page block borrow the first block code", () => {
+    const book = createDetectionBook();
+    const first = book.begin("page", "p1", "今日は晴れ", autoZh);
+    const second = book.begin("page", "p2", "no header", autoZh);
+    book.commit(first, "今日は晴れ", autoZh, "ja", false);
+    book.drop(second);
+    assert.equal(book.usableCode(autoZh, "page", "今日は晴れ"), "ja");
+    assert.equal(book.usableCode(autoZh, "page", "no header"), null);
+    assert.equal(book.usableCode(autoZh, "input", "no header"), null);
+  });
+
+  it("M10 keeps zh to zh when the detected code equals the target", () => {
+    const next = swapDirection(autoZh, "zh");
+    assert.equal(next.ok, true);
+    if (!next.ok) return;
+    assert.equal(next.sourceLang, "zh");
+    assert.equal(next.targetLang, "zh");
+    assert.equal(next.targetLang === "en", false);
+  });
+
   it("does not let a late token revive a newer request", () => {
     const book = createDetectionBook();
     const oldToken = book.begin("input", "input", "hello", autoZh);

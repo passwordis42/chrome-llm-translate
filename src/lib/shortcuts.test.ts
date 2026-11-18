@@ -110,15 +110,42 @@ describe("managed shortcuts", () => {
     assert.equal(new Set(Object.values(repaired)).size, 5);
   });
 
-  it("collapses the command channel and the page listener for one keypress", () => {
+  it("M19 collapses the old three command and page listeners inside 350ms", () => {
     const gate = createShortcutGate(350);
     assert.equal(gate("selection", 1_000), true);
     assert.equal(gate("selection", 1_200), false);
     assert.equal(gate("page", 1_200), true);
+    assert.equal(gate("crop", 1_200), true);
+    assert.equal(gate("crop", 1_400), false);
     assert.equal(gate("selection", 1_400), true);
     assert.equal(commandToPageMessage("selection").type, "toggle-selection");
     assert.equal(commandToPageMessage("page").type, "page-ai-start");
     assert.equal(commandToPageMessage("crop").type, "start-crop-ocr");
+  });
+
+  it("M20 keeps new webpage shortcuts off commands and rejects collisions with the old three", () => {
+    const defaults = defaultShortcuts();
+    const blocked = assignShortcut(defaults, "swap", "Alt+T");
+    assert.equal(blocked.ok, false);
+    assert.equal(blocked.shortcuts.swap, "Alt+Shift+Y");
+    assert.equal(blocked.shortcuts.page, "Alt+T");
+    const blockedInput = assignShortcut(defaults, "input", "Alt+E");
+    assert.equal(blockedInput.ok, false);
+    assert.equal(blockedInput.shortcuts.input, "Alt+Shift+I");
+    assert.equal(blockedInput.shortcuts.selection, "Alt+E");
+    assert.equal(matchShortcut(key({ key: "Y", code: "KeyY", altKey: true, shiftKey: true }), defaults), "swap");
+    assert.equal(matchShortcut(key({ key: "I", code: "KeyI", altKey: true, shiftKey: true }), defaults), "input");
+    const gate = createShortcutGate(350);
+    assert.equal(gate("swap", 2_000), true);
+    assert.equal(gate("swap", 2_100), false);
+    assert.equal(gate("input", 2_100), true);
+    const manifest = JSON.parse(readFileSync(new URL("../manifest.json", import.meta.url), "utf8")) as {
+      commands: Record<string, unknown>;
+    };
+    assert.deepEqual(Object.keys(manifest.commands).sort(), ["start-crop-ocr", "start-page-translate", "toggle-selection"]);
+    const background = readFileSync(new URL("../background/index.ts", import.meta.url), "utf8");
+    assert.equal(background.includes("swap-direction"), false);
+    assert.equal(background.includes("open-input-translate"), false);
   });
 
   it("keeps rebinding in settings and the live keys on the home tip", () => {
