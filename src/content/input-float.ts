@@ -5,9 +5,12 @@ import { copyText, el, markImg, mount } from "./dom.ts";
 import { detectionBook, directionOf, rememberDetection } from "./detect-state.ts";
 import { requestTranslation, type StreamError } from "./session.ts";
 import {
-  SELECTION_FLOAT_ENLARGED_WIDTH_CSS,
-  SELECTION_FLOAT_MAX_HEIGHT_CSS,
-} from "../lib/selection-float.ts";
+  INPUT_FLOAT_MARGIN,
+  INPUT_FLOAT_OPEN_LEFT,
+  INPUT_FLOAT_OPEN_TOP,
+  clampInputFloatOrigin,
+  inputFloatStyleSize,
+} from "../lib/input-float-layout.ts";
 
 export interface InputFloatDeps {
   getSettings: () => Settings;
@@ -33,8 +36,7 @@ let busy = false;
 let run = 0;
 let currentAbort: AbortController | null = null;
 let resultDirection: { sourceLang: string; targetLang: string } | null = null;
-
-const INPUT_WIDTH = "min(400px, calc(100vw - 16px))";
+let onViewport: (() => void) | null = null;
 
 export function initInputFloat(next: InputFloatDeps): void {
   deps = next;
@@ -52,12 +54,15 @@ export function openInputFloat(): void {
   ensure();
   if (!host || !field) return;
   host.hidden = false;
+  const origin = readOrigin();
+  placeHost(origin.left, origin.top);
   renderChrome();
   field.focus();
 }
 
 export function closeInputFloat(): void {
   run += 1;
+  unbindViewport();
   host?.remove();
   host = null;
   root = null;
@@ -98,7 +103,8 @@ function ensure(): void {
   zoomButton.type = "button";
   zoomButton.addEventListener("click", () => {
     enlarged = !enlarged;
-    paintBox();
+    const origin = readOrigin();
+    placeHost(origin.left, origin.top);
     renderChrome();
   });
   chip = el("span", "input-chip");
@@ -113,14 +119,9 @@ function ensure(): void {
     if (!host || event.button !== 0) return;
     const startX = event.clientX;
     const startY = event.clientY;
-    const originLeft = host.offsetLeft;
-    const originTop = host.offsetTop;
+    const origin = readOrigin();
     const move = (next: PointerEvent) => {
-      if (!host) return;
-      const maxLeft = Math.max(8, window.innerWidth - host.offsetWidth - 8);
-      const maxTop = Math.max(8, window.innerHeight - host.offsetHeight - 8);
-      host.style.left = `${Math.min(maxLeft, Math.max(8, originLeft + next.clientX - startX))}px`;
-      host.style.top = `${Math.min(maxTop, Math.max(8, originTop + next.clientY - startY))}px`;
+      placeHost(origin.left + next.clientX - startX, origin.top + next.clientY - startY);
     };
     const stop = () => {
       window.removeEventListener("pointermove", move);
@@ -158,6 +159,7 @@ function ensure(): void {
   field = el("textarea");
   field.placeholder = "输入或粘贴要翻译的文字";
   field.rows = 5;
+  field.style.resize = "none";
   field.addEventListener("input", () => {
     const settings = deps?.getSettings();
     if (!settings || !field) return;
@@ -227,17 +229,106 @@ function ensure(): void {
     option.value = language.code;
     target.append(option);
   }
-  host.style.left = "24px";
-  host.style.top = "24px";
-  paintBox();
+  bindViewport();
+  placeHost(INPUT_FLOAT_OPEN_LEFT, INPUT_FLOAT_OPEN_TOP);
 }
 
-function paintBox(): void {
+function readViewport(): { width: number; height: number } {
+  const view = window.visualViewport;
+  return {
+    width: view?.width ?? window.innerWidth,
+    height: view?.height ?? window.innerHeight,
+  };
+}
+
+function readOrigin(): { left: number; top: number } {
+  const left = Number.parseFloat(host?.style.left ?? "");
+  const top = Number.parseFloat(host?.style.top ?? "");
+  return {
+    left: Number.isFinite(left) ? left : INPUT_FLOAT_OPEN_LEFT,
+    top: Number.isFinite(top) ? top : INPUT_FLOAT_OPEN_TOP,
+  };
+}
+
+function bindViewport(): void {
+  unbindViewport();
+  onViewport = () => {
+    const origin = readOrigin();
+    placeHost(origin.left, origin.top);
+  };
+  window.addEventListener("resize", onViewport);
+  window.visualViewport?.addEventListener("resize", onViewport);
+}
+
+function unbindViewport(): void {
+  if (!onViewport) return;
+  window.removeEventListener("resize", onViewport);
+  window.visualViewport?.removeEventListener("resize", onViewport);
+  onViewport = null;
+}
+
+function applySize(size: { width: number; maxHeight: number; height: number | null }): void {
   if (!host) return;
   host.classList.toggle("is-enlarged", enlarged);
-  host.style.width = enlarged ? SELECTION_FLOAT_ENLARGED_WIDTH_CSS : INPUT_WIDTH;
-  host.style.height = enlarged ? SELECTION_FLOAT_MAX_HEIGHT_CSS : "";
-  host.style.maxHeight = enlarged ? SELECTION_FLOAT_MAX_HEIGHT_CSS : "calc(100vh - 24px)";
+  host.style.boxSizing = "border-box";
+  host.style.width = `${size.width}px`;
+  host.style.maxWidth = `${size.width}px`;
+  host.style.maxHeight = `${size.maxHeight}px`;
+  host.style.height = size.height == null ? "" : `${size.height}px`;
+}
+
+/** 用当前可视区域和实测外框摆放。拖出视口时拉回来，不改宽高约定。 */
+function placeHost(desiredLeft: number, desiredTop: number): void {
+  if (!host) return;
+  const view = readViewport();
+  const first = inputFloatStyleSize({
+    enlarged,
+    viewportWidth: view.width,
+    viewportHeight: view.height,
+  });
+  applySize(first);
+  host.style.left = `${desiredLeft}px`;
+  host.style.top = `${desiredTop}px`;
+  let rect = host.getBoundingClientRect();
+  const budgetH = view.height - INPUT_FLOAT_MARGIN * 2;
+  const extraWidth = rect.width - first.width;
+  const extraHeight = rect.height - budgetH;
+  if (extraWidth > 0.5 || extraHeight > 0.5) {
+    applySize(inputFloatStyleSize({
+      enlarged,
+      viewportWidth: view.width,
+      viewportHeight: view.height,
+      extraWidth: Math.max(0, extraWidth),
+      extraHeight: Math.max(0, extraHeight),
+    }));
+    rect = host.getBoundingClientRect();
+  }
+  const target = clampInputFloatOrigin({
+    left: rect.left,
+    top: rect.top,
+    outerWidth: rect.width,
+    outerHeight: rect.height,
+    viewportWidth: view.width,
+    viewportHeight: view.height,
+  });
+  host.style.left = `${desiredLeft + (target.left - rect.left)}px`;
+  host.style.top = `${desiredTop + (target.top - rect.top)}px`;
+  rect = host.getBoundingClientRect();
+  const nudge = clampInputFloatOrigin({
+    left: rect.left,
+    top: rect.top,
+    outerWidth: rect.width,
+    outerHeight: rect.height,
+    viewportWidth: view.width,
+    viewportHeight: view.height,
+  });
+  const dx = nudge.left - rect.left;
+  const dy = nudge.top - rect.top;
+  if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+    const origin = readOrigin();
+    host.style.left = `${origin.left + dx}px`;
+    host.style.top = `${origin.top + dy}px`;
+  }
 }
 
 function renderChrome(): void {

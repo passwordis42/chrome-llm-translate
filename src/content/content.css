@@ -677,18 +677,17 @@ img { display: block; }
 :host(#yifan-input) {
   position: fixed;
   z-index: 2147483647;
-  width: min(400px, calc(100vw - 16px));
-  max-height: calc(100vh - 24px);
-}
-:host(#yifan-input.is-enlarged) {
-  width: min(640px, calc(100vw - 24px));
-  height: calc(100vh - 24px);
-  max-height: calc(100vh - 24px);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 .input-panel {
   display: flex;
   flex-direction: column;
-  max-height: calc(100vh - 24px);
+  width: 100%;
+  max-height: inherit;
+  min-height: 0;
   background: #fffefb;
   border: 1px solid #e6e0d4;
   border-radius: 14px;
@@ -702,14 +701,25 @@ img { display: block; }
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
   padding: 10px 12px;
   border-bottom: 1px solid #e6e0d4;
   background: repeating-linear-gradient(-45deg, #fbfaf6, #fbfaf6 6px, #f3f0e8 6px, #f3f0e8 12px);
   cursor: grab;
   user-select: none;
+  flex-shrink: 0;
 }
 .input-hd img { width: 22px; height: 22px; border-radius: 6px; }
-.input-hd h2 { margin: 0; font-size: 13px; font-weight: 800; flex: 1; min-width: 0; }
+.input-hd h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 800;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .input-chip {
   font-size: 11px;
   font-weight: 700;
@@ -719,6 +729,8 @@ img { display: block; }
   border-radius: 999px;
   padding: 3px 8px;
   max-width: 42%;
+  min-width: 0;
+  flex-shrink: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -726,6 +738,7 @@ img { display: block; }
 .input-close {
   width: 28px;
   height: 28px;
+  flex-shrink: 0;
   border: 1px solid #e6e0d4;
   border-radius: 8px;
   background: #fff;
@@ -750,7 +763,14 @@ img { display: block; }
   color: #2c2a26;
 }
 .input-field select { min-height: 32px; font-weight: 700; font-size: 12px; }
-.input-body textarea { min-height: 96px; line-height: 1.65; padding: 10px 12px; margin-top: 8px; }
+.input-body textarea {
+  min-height: 96px;
+  line-height: 1.65;
+  padding: 10px 12px;
+  margin-top: 8px;
+  resize: none;
+  overflow: auto;
+}
 .input-swap {
   width: 36px;
   height: 36px;
@@ -796,8 +816,9 @@ img { display: block; }
   gap: 6px;
   padding: 10px 12px 8px;
   border-top: 1px solid #e6e0d4;
+  flex-shrink: 0;
 }
-.input-kbd { margin: 0; padding: 0 12px 8px; font-size: 10px; color: #6f6a60; text-align: center; }
+.input-kbd { margin: 0; padding: 0 12px 8px; font-size: 10px; color: #6f6a60; text-align: center; flex-shrink: 0; }
 .dir-note {
   margin: 0 14px 8px;
   font-size: 11px;
