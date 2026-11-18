@@ -286,7 +286,7 @@ function markStaleIfNeeded(): void {
 }
 
 async function submit(): Promise<void> {
-  if (!deps || !field || !output || !status || !translateButton || busy) return;
+  if (!deps || !field || !output || !status || !translateButton || !copyButton || busy) return;
   const text = field.value.trim();
   if (!text) return;
   const settings = deps.getSettings();

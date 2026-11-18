@@ -94,7 +94,6 @@ describe("detection binding", () => {
     if (!next.ok) return;
     assert.equal(next.sourceLang, "zh");
     assert.equal(next.targetLang, "zh");
-    assert.equal(next.targetLang === "en", false);
   });
 
   it("does not let a late token revive a newer request", () => {
