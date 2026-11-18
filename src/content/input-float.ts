@@ -299,7 +299,9 @@ async function submit(): Promise<void> {
   busy = true;
   resultDirection = null;
   output.hidden = true;
+  output.replaceChildren();
   output.classList.remove("is-stale");
+  copyButton.hidden = true;
   status.hidden = false;
   status.textContent = "正在翻译…";
   renderChrome();
@@ -332,10 +334,14 @@ async function submit(): Promise<void> {
       status.textContent = INCOMPLETE_TEXT;
     } else if (protocol) {
       output.hidden = true;
+      output.replaceChildren();
+      copyButton.hidden = true;
       status.hidden = false;
       status.textContent = PROTOCOL_ERROR_TEXT;
     } else if (streamError.name !== "AbortError") {
       output.hidden = true;
+      output.replaceChildren();
+      copyButton.hidden = true;
       status.hidden = false;
       status.textContent = streamError.message || "翻译失败。原文已保留。不会假翻。";
     }
