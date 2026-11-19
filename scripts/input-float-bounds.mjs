@@ -6,7 +6,7 @@ import { chromium } from "playwright-core";
 const dist = path.resolve("dist");
 const chrome = process.env.YIFAN_CHROME || "/tmp/cft/chrome-linux64/chrome";
 const out = process.env.OUT || "/tmp/yifan-input-bounds";
-const profile = "/tmp/yifan-input-bounds-profile";
+const profile = "/tmp/yifan-input-bounds-profile-zoom1";
 await mkdir(out, { recursive: true });
 
 const sample = await readFile(new URL("../dev/sample.html", import.meta.url), "utf8");
