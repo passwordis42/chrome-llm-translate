@@ -778,6 +778,7 @@ img { display: block; }
   border-radius: 9px;
   background: #fff;
 }
+.input-pill[hidden] { display: none !important; }
 .input-pill {
   display: inline-block;
   margin-top: 4px;

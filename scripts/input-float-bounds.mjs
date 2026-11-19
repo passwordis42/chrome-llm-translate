@@ -89,8 +89,21 @@ try {
   const popup = await context.newPage();
   await popup.setViewportSize({ width: 1280, height: 800 });
   await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+  await popup.locator("#hk-swap").waitFor();
+  await popup.locator("#shortcut-block").scrollIntoViewIfNeeded();
+  await popup.locator("#shortcut-block").screenshot({ path: path.join(out, "settings-shortcuts.png") });
+  const shortcutCopy = await popup.locator(".hk-sub").allInnerTexts();
+  if (!shortcutCopy.every((line) => line.includes("尚未验证") && line.includes("请先用按钮"))) {
+    fail(`设置页快捷说明不诚实: ${shortcutCopy.join(" | ")}`);
+  }
+  if (shortcutCopy.some((line) => line.includes("未绑定"))) fail("设置页把仍会触发的键写成未绑定");
   await popup.getByRole("button", { name: "返回主弹窗" }).click();
   await popup.locator("#home-swap").waitFor();
+  const homeNote = await popup.locator("#hotkey-note").innerText();
+  if (!homeNote.includes("Alt+Shift+Y") || !homeNote.includes("Alt+Shift+I") || !homeNote.includes("尚未验证") || !homeNote.includes("请用按钮")) {
+    fail(`主弹窗快捷说明不诚实: ${homeNote}`);
+  }
+  if (homeNote.includes("未绑定")) fail("主弹窗把仍会触发的键写成未绑定");
   await popup.screenshot({ path: path.join(out, "popup-desktop.png") });
   await popup.setViewportSize({ width: 360, height: 780 });
   await popup.screenshot({ path: path.join(out, "popup-360.png") });
@@ -216,6 +229,7 @@ try {
   if (!narrowZoom.ok) fail(`窄视口 200% 缩放失败`);
   await page.waitForTimeout(250);
   await measure("200%-narrow");
+  await page.screenshot({ path: path.join(out, "input-200-narrow.png") });
   await zoomTo(page, sw, 1);
   await page.setViewportSize({ width: 1280, height: 800 });
 

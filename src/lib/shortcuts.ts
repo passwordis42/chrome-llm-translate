@@ -220,9 +220,12 @@ export function formatHotkeyTip(shortcuts: ManagedShortcuts): string {
   return `${shortcuts.page} 整页 · ${shortcuts.crop} 识译 · ${shortcuts.selection} 划词 · 右键 ⌝/⌟/⌞`;
 }
 
-/** 网页内自管键。不是 chrome.commands，也不是系统全局热键。 */
+/**
+ * 写出已经保存、页面会监听的键，并标明冲突尚未验证。
+ * 不把未验证写成已可用，也不在键仍会触发时写成未绑定。
+ */
 export function formatPageHotkeyNote(shortcuts: ManagedShortcuts): string {
-  return `网页内 ${shortcuts.swap} 互换方向，${shortcuts.input} 打开输入翻译。可在扩展设置改键。不是浏览器命令，也不是系统全局热键。是否与浏览器或输入法冲突未在本机验证。`;
+  return `已保存网页按键 ${shortcuts.swap}（互换）和 ${shortcuts.input}（输入）。普通网页会按已保存的键监听；与浏览器或输入法是否冲突尚未验证，未验证前请用按钮。不是浏览器命令，也不是系统全局热键。`;
 }
 
 export function createShortcutGate(windowMs = 350): (action: ShortcutId, now?: number) => boolean {

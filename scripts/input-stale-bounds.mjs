@@ -119,6 +119,8 @@ try {
       const statusText = statusNode && !statusNode.hidden ? statusNode.textContent ?? "" : "";
       const copyButton = [...root.querySelectorAll("button")].find((button) => button.textContent?.includes("复制"));
       const pill = root.querySelector(".input-pill");
+      const pillStyle = pill ? getComputedStyle(pill) : null;
+      const pillRect = pill ? pill.getBoundingClientRect() : null;
       const pillText = pill && !pill.hidden ? pill.textContent ?? "" : "";
       const value = root.querySelector("textarea")?.value ?? "";
       const swap = root.querySelector(".input-swap");
@@ -138,6 +140,9 @@ try {
         body,
         statusText,
         pillText,
+        pillDisplay: pillStyle?.display ?? "",
+        pillWidth: pillRect?.width ?? -1,
+        pillHeight: pillRect?.height ?? -1,
         value,
         copyVisible: Boolean(copyButton && !copyButton.hidden),
         swapDisabled: Boolean(swap?.disabled),
@@ -155,9 +160,15 @@ try {
     if (ui.clip.includes(oldText)) fail(`${label} 剪贴板读到旧译文 ${oldText}`);
     if (ui.copyVisible) fail(`${label} 复制按钮仍可用`);
     if (ui.pillText.includes("日语") || ui.pillText.includes("法语")) fail(`${label} 旧识别还在`);
+    if (ui.pillDisplay !== "none" || ui.pillWidth !== 0 || ui.pillHeight !== 0) {
+      fail(`${label} 空胶囊仍占用画面 display=${ui.pillDisplay} ${ui.pillWidth}x${ui.pillHeight}`);
+    }
   }
 
   await openFloat();
+  const empty = await readUi("empty");
+  if (empty.pillDisplay !== "none" || empty.pillWidth !== 0) fail("空态仍画出识别胶囊");
+  await page.screenshot({ path: path.join(out, "pass-empty.png") });
   const before = await fetches();
   await float.locator("textarea").fill("TEXT-A 原文");
   await float.getByRole("button", { name: "翻译", exact: true }).click();
@@ -243,6 +254,7 @@ try {
   await page.waitForTimeout(1200);
   const unknownDone = await readUi("unknown-done");
   if (!unknownDone.body.includes("未知译文")) fail("unknown 没有显示正文");
+  if (unknownDone.pillDisplay !== "none" || unknownDone.pillWidth !== 0) fail("unknown 仍画出空胶囊");
   await float.locator("textarea").fill("UNKNOWN 已改");
   await page.waitForTimeout(200);
   const unknown = await readUi("unknown-edit");
@@ -255,6 +267,7 @@ try {
   const protocolDone = await readUi("protocol-done");
   if (protocolDone.body.includes("没有协议头")) fail("协议错误把正文写出来了");
   if (!protocolDone.statusText.includes("协议错误")) fail("没有协议错误提示");
+  if (protocolDone.pillDisplay !== "none" || protocolDone.pillWidth !== 0) fail("协议错误仍画出空胶囊");
   await float.locator("textarea").fill("PROTOCOL 已改");
   await page.waitForTimeout(300);
   const protocol = await readUi("protocol-edit");
@@ -326,6 +339,7 @@ try {
   const helloDone = await readUi("hello-newline-done");
   if (!helloDone.body.includes("译文A") || !helloDone.copyVisible) fail("带换行提交后没有可复制的译文");
   if (!helloDone.pillText.includes("日语") || helloDone.swapDisabled) fail("当前修订没有用提交正文显示识别和互换");
+  if (helloDone.pillDisplay === "none" || helloDone.pillWidth < 8) fail("成功识别的胶囊没有画出来");
   if ((await fetches()) !== beforeHello + 1) fail("带换行提交的请求数不对");
   await page.screenshot({ path: path.join(out, "pass-hello-newline.png") });
 

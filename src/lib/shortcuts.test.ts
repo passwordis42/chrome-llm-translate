@@ -10,6 +10,7 @@ import {
   defaultShortcuts,
   formatChord,
   formatHotkeyTip,
+  formatPageHotkeyNote,
   matchShortcut,
   normalizeShortcuts,
   parseChord,
@@ -146,6 +147,21 @@ describe("managed shortcuts", () => {
     const background = readFileSync(new URL("../background/index.ts", import.meta.url), "utf8");
     assert.equal(background.includes("swap-direction"), false);
     assert.equal(background.includes("open-input-translate"), false);
+  });
+
+  it("names the saved webpage keys and does not call an unverified chord available", () => {
+    const custom = { ...defaultShortcuts(), swap: "Ctrl+Shift+Y" };
+    const note = formatPageHotkeyNote(custom);
+    assert.match(note, /Ctrl\+Shift\+Y/);
+    assert.match(note, /Alt\+Shift\+I/);
+    assert.match(note, /尚未验证/);
+    assert.match(note, /请用按钮/);
+    assert.equal(note.includes("未绑定"), false);
+    assert.equal(note.includes("已可用"), false);
+    const popup = readFileSync(new URL("../popup/popup.html", import.meta.url), "utf8");
+    const settings = popup.slice(popup.indexOf('id="settings-view"'), popup.indexOf('id="glossary-view"'));
+    assert.match(settings, /冲突尚未验证，请先用按钮/);
+    assert.equal(settings.includes("未绑定"), false);
   });
 
   it("keeps rebinding in settings and the live keys on the home tip", () => {
