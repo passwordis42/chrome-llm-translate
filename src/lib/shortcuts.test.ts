@@ -35,9 +35,11 @@ describe("managed shortcuts", () => {
       page: "Alt+T",
       crop: "Alt+S",
       selection: "Alt+E",
-      swap: "Alt+Shift+Y",
-      input: "Alt+Shift+I",
+      swap: "",
+      input: "",
     });
+    assert.equal(matchShortcut(key({ key: "Y", code: "KeyY", altKey: true, shiftKey: true }), shortcuts), null);
+    assert.equal(matchShortcut(key({ key: "I", code: "KeyI", altKey: true, shiftKey: true }), shortcuts), null);
     assert.equal(formatHotkeyTip(shortcuts), "Alt+T 整页 · Alt+S 识译 · Alt+E 划词 · 右键 ⌝/⌟/⌞");
     assert.equal(formatHotkeyTip(shortcuts).includes("未设置"), false);
     assert.equal(normalizeSettings({}).shortcuts.page, "Alt+T");
@@ -95,20 +97,45 @@ describe("managed shortcuts", () => {
     delete upgraded.shortcuts;
     assert.equal(shouldRewriteSettings(upgraded), true);
 
+    const official = normalizeShortcuts({ page: "Alt+T", crop: "Alt+S", selection: "Alt+E" });
+    assert.equal(official.swap, "");
+    assert.equal(official.input, "");
+    assert.equal(shouldRewriteSettings({ shortcuts: { page: "Alt+T", crop: "Alt+S", selection: "Alt+E" } }), true);
+
     const custom = normalizeSettings({
       shortcuts: { page: "Ctrl+Shift+Y", crop: "Alt+S", selection: "alt+e" },
     });
     assert.equal(custom.shortcuts.page, "Ctrl+Shift+Y");
     assert.equal(custom.shortcuts.selection, "Alt+E");
+    assert.equal(custom.shortcuts.swap, "");
+    assert.equal(custom.shortcuts.input, "");
     assert.equal(shouldRewriteSettings(custom), false);
+
+    const explicit = normalizeShortcuts({
+      page: "Alt+T",
+      crop: "Alt+S",
+      selection: "Alt+E",
+      swap: "Alt+Shift+Y",
+      input: "Ctrl+Shift+K",
+    });
+    assert.equal(explicit.swap, "Alt+Shift+Y");
+    assert.equal(explicit.input, "Ctrl+Shift+K");
+    const ambiguous = normalizeShortcuts({
+      page: "Alt+T",
+      crop: "Alt+S",
+      selection: "Alt+E",
+      swap: "Alt+Shift+Y",
+      input: "Alt+Shift+I",
+    });
+    assert.equal(ambiguous.swap, "Alt+Shift+Y");
+    assert.equal(ambiguous.input, "Alt+Shift+I");
 
     const repaired = normalizeShortcuts({ page: "Alt+S", crop: "Alt+S", selection: "Alt+E" });
     assert.equal(repaired.page, "Alt+S");
     assert.equal(repaired.crop, "Alt+T");
     assert.equal(repaired.selection, "Alt+E");
-    assert.equal(repaired.swap, "Alt+Shift+Y");
-    assert.equal(repaired.input, "Alt+Shift+I");
-    assert.equal(new Set(Object.values(repaired)).size, 5);
+    assert.equal(repaired.swap, "");
+    assert.equal(repaired.input, "");
   });
 
   it("M19 collapses the old three command and page listeners inside 350ms", () => {
@@ -128,14 +155,21 @@ describe("managed shortcuts", () => {
     const defaults = defaultShortcuts();
     const blocked = assignShortcut(defaults, "swap", "Alt+T");
     assert.equal(blocked.ok, false);
-    assert.equal(blocked.shortcuts.swap, "Alt+Shift+Y");
+    assert.equal(blocked.shortcuts.swap, "");
     assert.equal(blocked.shortcuts.page, "Alt+T");
-    const blockedInput = assignShortcut(defaults, "input", "Alt+E");
+    const chosen = assignShortcut(defaults, "swap", "Alt+Shift+Y");
+    assert.equal(chosen.ok, true);
+    if (!chosen.ok) return;
+    const blockedInput = assignShortcut(chosen.shortcuts, "input", "Alt+Shift+Y");
     assert.equal(blockedInput.ok, false);
-    assert.equal(blockedInput.shortcuts.input, "Alt+Shift+I");
-    assert.equal(blockedInput.shortcuts.selection, "Alt+E");
-    assert.equal(matchShortcut(key({ key: "Y", code: "KeyY", altKey: true, shiftKey: true }), defaults), "swap");
-    assert.equal(matchShortcut(key({ key: "I", code: "KeyI", altKey: true, shiftKey: true }), defaults), "input");
+    assert.equal(blockedInput.shortcuts.input, "");
+    assert.equal(blockedInput.shortcuts.swap, "Alt+Shift+Y");
+    const customInput = assignShortcut(chosen.shortcuts, "input", "Alt+Shift+I");
+    assert.equal(customInput.ok, true);
+    if (!customInput.ok) return;
+    assert.equal(matchShortcut(key({ key: "Y", code: "KeyY", altKey: true, shiftKey: true }), defaults), null);
+    assert.equal(matchShortcut(key({ key: "Y", code: "KeyY", altKey: true, shiftKey: true }), customInput.shortcuts), "swap");
+    assert.equal(matchShortcut(key({ key: "I", code: "KeyI", altKey: true, shiftKey: true }), customInput.shortcuts), "input");
     const gate = createShortcutGate(350);
     assert.equal(gate("swap", 2_000), true);
     assert.equal(gate("swap", 2_100), false);
@@ -150,18 +184,23 @@ describe("managed shortcuts", () => {
   });
 
   it("names the saved webpage keys and does not call an unverified chord available", () => {
+    const unbound = formatPageHotkeyNote(defaultShortcuts());
+    assert.match(unbound, /互换未绑定/);
+    assert.match(unbound, /输入翻译未绑定/);
+    assert.equal(unbound.includes("Alt+Shift+Y"), false);
+    assert.equal(unbound.includes("Alt+Shift+I"), false);
     const custom = { ...defaultShortcuts(), swap: "Ctrl+Shift+Y" };
     const note = formatPageHotkeyNote(custom);
     assert.match(note, /Ctrl\+Shift\+Y/);
-    assert.match(note, /Alt\+Shift\+I/);
+    assert.match(note, /输入翻译未绑定/);
     assert.match(note, /尚未验证/);
     assert.match(note, /请用按钮/);
-    assert.equal(note.includes("未绑定"), false);
     assert.equal(note.includes("已可用"), false);
     const popup = readFileSync(new URL("../popup/popup.html", import.meta.url), "utf8");
     const settings = popup.slice(popup.indexOf('id="settings-view"'), popup.indexOf('id="glossary-view"'));
-    assert.match(settings, /冲突尚未验证，请先用按钮/);
-    assert.equal(settings.includes("未绑定"), false);
+    assert.match(settings, /尚未绑定，请用按钮/);
+    assert.equal(settings.includes("Alt+Shift+Y"), false);
+    assert.equal(settings.includes("Alt+Shift+I"), false);
   });
 
   it("keeps rebinding in settings and the live keys on the home tip", () => {

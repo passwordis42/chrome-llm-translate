@@ -582,6 +582,7 @@ td.dst { font-weight: 600; }
   min-height: 32px;
   background: #fff;
 }
+.detect-pill[hidden] { display: none !important; }
 .detect-pill {
   display: inline-block;
   margin-top: 4px;

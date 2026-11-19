@@ -689,8 +689,15 @@ function renderShortcutRows(): void {
       key.removeAttribute("aria-label");
     } else {
       key.classList.remove("listening");
-      key.textContent = managedShortcuts[id];
-      key.setAttribute("aria-label", `当前键 ${managedShortcuts[id]}`);
+      const chord = managedShortcuts[id];
+      key.textContent = chord || "未绑定";
+      key.setAttribute("aria-label", chord ? `当前键 ${chord}` : "未绑定");
+      const sub = row?.querySelector<HTMLElement>(".hk-sub");
+      if (sub) {
+        sub.textContent = chord
+          ? "已保存。冲突尚未验证，请先用按钮。"
+          : "尚未绑定，请用按钮。可在扩展设置改键。";
+      }
     }
   }
 }

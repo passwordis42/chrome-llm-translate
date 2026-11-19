@@ -42,8 +42,8 @@ export const DEFAULT_SHORTCUTS: ManagedShortcuts = {
   page: "Alt+T",
   crop: "Alt+S",
   selection: "Alt+E",
-  swap: "Alt+Shift+Y",
-  input: "Alt+Shift+I",
+  swap: "",
+  input: "",
 };
 
 const NAMED_KEYS = [
@@ -142,6 +142,7 @@ export function matchShortcut(event: KeySnapshot, shortcuts: ManagedShortcuts): 
   if (!chord) return null;
   const formatted = formatChord(chord);
   for (const id of SHORTCUT_IDS) {
+    if (!shortcuts[id]) continue;
     if (shortcuts[id] === formatted) return id;
   }
   return null;
@@ -187,8 +188,9 @@ export function restoreDefaultShortcuts(): ManagedShortcuts {
 }
 
 /**
- * 缺槽、写坏、或和前面的槽撞车时，用还没被占用的默认键补上。
- * 三条默认互不冲突；补完后仍然互不相同。
+ * 旧三键缺槽时补 Alt+T/S/E。互换和输入缺槽时保持空绑定。
+ * 存储里已经写上的组合键原样保留，包括恰好是 Alt+Shift+Y / Alt+Shift+I 的值。
+ * 没有来源字段，不能把已存的候选键当成草稿自动写入而清掉。
  */
 export function normalizeShortcuts(raw: unknown): ManagedShortcuts {
   const defaults = defaultShortcuts();
@@ -203,7 +205,12 @@ export function normalizeShortcuts(raw: unknown): ManagedShortcuts {
       used.add(formatted);
       continue;
     }
-    const free = SHORTCUT_IDS.map((slot) => defaults[slot]).find((value) => !used.has(value)) ?? defaults[id];
+    if (id === "swap" || id === "input") {
+      next[id] = "";
+      continue;
+    }
+    const legacyDefaults = [defaults.page, defaults.crop, defaults.selection];
+    const free = legacyDefaults.find((value) => value && !used.has(value)) ?? defaults[id];
     next[id] = free;
     used.add(free);
   }
@@ -220,12 +227,14 @@ export function formatHotkeyTip(shortcuts: ManagedShortcuts): string {
   return `${shortcuts.page} 整页 · ${shortcuts.crop} 识译 · ${shortcuts.selection} 划词 · 右键 ⌝/⌟/⌞`;
 }
 
-/**
- * 写出已经保存、页面会监听的键，并标明冲突尚未验证。
- * 不把未验证写成已可用，也不在键仍会触发时写成未绑定。
- */
+function pageKeyPhrase(label: string, chord: string): string {
+  if (!chord) return `${label}未绑定，请用按钮`;
+  return `${label}已保存 ${chord}。普通网页会监听这个键；与浏览器或输入法是否冲突尚未验证，未验证前请用按钮`;
+}
+
+/** 空绑定写未绑定。已保存的键写出实际组合，并标明冲突尚未验证。 */
 export function formatPageHotkeyNote(shortcuts: ManagedShortcuts): string {
-  return `已保存网页按键 ${shortcuts.swap}（互换）和 ${shortcuts.input}（输入）。普通网页会按已保存的键监听；与浏览器或输入法是否冲突尚未验证，未验证前请用按钮。不是浏览器命令，也不是系统全局热键。`;
+  return `${pageKeyPhrase("互换", shortcuts.swap)}。${pageKeyPhrase("输入翻译", shortcuts.input)}。可在扩展设置改键。不是浏览器命令，也不是系统全局热键。`;
 }
 
 export function createShortcutGate(windowMs = 350): (action: ShortcutId, now?: number) => boolean {

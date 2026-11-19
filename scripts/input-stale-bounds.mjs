@@ -254,12 +254,21 @@ try {
   await page.waitForTimeout(1200);
   const unknownDone = await readUi("unknown-done");
   if (!unknownDone.body.includes("未知译文")) fail("unknown 没有显示正文");
+  if (!unknownDone.statusText.includes("手动选择") && !unknownDone.pillText) {
+    const hint = await page.evaluate(() => {
+      const node = document.getElementById("yifan-input")?.shadowRoot?.querySelector(".input-hint");
+      return node && !node.hidden ? node.textContent ?? "" : "";
+    });
+    if (!hint.includes("手动选择") && !unknownDone.statusText.includes("未识别")) fail(`unknown 没有手选提示: ${unknownDone.statusText} / ${hint}`);
+  }
+  if (unknownDone.swapDisabled !== true) fail("unknown 完成时 auto 互换没有禁用");
   if (unknownDone.pillDisplay !== "none" || unknownDone.pillWidth !== 0) fail("unknown 仍画出空胶囊");
+  await page.screenshot({ path: path.join(out, "unknown-complete.png") });
   await float.locator("textarea").fill("UNKNOWN 已改");
   await page.waitForTimeout(200);
   const unknown = await readUi("unknown-edit");
   assertNoOld("unknown-edit", unknown, "未知译文");
-  await page.screenshot({ path: path.join(out, "pass-unknown.png") });
+  await page.screenshot({ path: path.join(out, "unknown-after-edit.png") });
 
   await float.locator("textarea").fill("PROTOCOL 文本");
   await float.getByRole("button", { name: "翻译", exact: true }).click();
@@ -267,13 +276,17 @@ try {
   const protocolDone = await readUi("protocol-done");
   if (protocolDone.body.includes("没有协议头")) fail("协议错误把正文写出来了");
   if (!protocolDone.statusText.includes("协议错误")) fail("没有协议错误提示");
+  if (protocolDone.copyVisible) fail("协议错误仍可复制");
+  if (!protocolDone.value.includes("PROTOCOL 文本")) fail("协议错误没有保留原文");
   if (protocolDone.pillDisplay !== "none" || protocolDone.pillWidth !== 0) fail("协议错误仍画出空胶囊");
+  if (protocolDone.swapDisabled !== true) fail("协议错误时 auto 互换没有禁用");
+  await page.screenshot({ path: path.join(out, "protocol-error.png") });
   await float.locator("textarea").fill("PROTOCOL 已改");
   await page.waitForTimeout(300);
   const protocol = await readUi("protocol-edit");
   assertNoOld("protocol-edit", protocol, "没有协议头");
   if (!protocol.value.includes("PROTOCOL 已改")) fail("协议错误后原文丢失");
-  await page.screenshot({ path: path.join(out, "pass-protocol.png") });
+  await page.screenshot({ path: path.join(out, "protocol-after-edit.png") });
 
   const fetchesBeforeB = await fetches();
   await float.locator("textarea").fill("TEXT-B 新提交");

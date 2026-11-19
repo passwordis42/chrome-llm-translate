@@ -93,17 +93,27 @@ try {
   await popup.locator("#shortcut-block").scrollIntoViewIfNeeded();
   await popup.locator("#shortcut-block").screenshot({ path: path.join(out, "settings-shortcuts.png") });
   const shortcutCopy = await popup.locator(".hk-sub").allInnerTexts();
-  if (!shortcutCopy.every((line) => line.includes("尚未验证") && line.includes("请先用按钮"))) {
-    fail(`设置页快捷说明不诚实: ${shortcutCopy.join(" | ")}`);
-  }
-  if (shortcutCopy.some((line) => line.includes("未绑定"))) fail("设置页把仍会触发的键写成未绑定");
+  const swapText = await popup.locator("#hk-swap").innerText();
+  const inputText = await popup.locator("#hk-input").innerText();
+  if (swapText !== "未绑定" || inputText !== "未绑定") fail(`新两项默认不是未绑定: ${swapText} / ${inputText}`);
+  if (!shortcutCopy.every((line) => line.includes("尚未绑定"))) fail(`设置页默认说明不对: ${shortcutCopy.join(" | ")}`);
+  if (shortcutCopy.some((line) => line.includes("Alt+Shift"))) fail("设置页默认写出了候选键");
   await popup.getByRole("button", { name: "返回主弹窗" }).click();
   await popup.locator("#home-swap").waitFor();
   const homeNote = await popup.locator("#hotkey-note").innerText();
-  if (!homeNote.includes("Alt+Shift+Y") || !homeNote.includes("Alt+Shift+I") || !homeNote.includes("尚未验证") || !homeNote.includes("请用按钮")) {
-    fail(`主弹窗快捷说明不诚实: ${homeNote}`);
+  if (!homeNote.includes("互换未绑定") || !homeNote.includes("输入翻译未绑定") || !homeNote.includes("请用按钮")) {
+    fail(`主弹窗默认快捷说明不对: ${homeNote}`);
   }
-  if (homeNote.includes("未绑定")) fail("主弹窗把仍会触发的键写成未绑定");
+  if (homeNote.includes("Alt+Shift+Y") || homeNote.includes("Alt+Shift+I")) fail(`主弹窗默认写出了候选键: ${homeNote}`);
+  const homePill = await popup.locator("#home-detect").evaluate((node) => {
+    const style = getComputedStyle(node);
+    const rect = node.getBoundingClientRect();
+    return { display: style.display, width: rect.width, height: rect.height, text: node.textContent ?? "" };
+  });
+  if (homePill.display !== "none" || homePill.width !== 0 || homePill.height !== 0 || homePill.text.trim()) {
+    fail(`主弹窗空识别胶囊仍占位: ${JSON.stringify(homePill)}`);
+  }
+  note(`home-detect ${JSON.stringify(homePill)}`);
   await popup.screenshot({ path: path.join(out, "popup-desktop.png") });
   await popup.setViewportSize({ width: 360, height: 780 });
   await popup.screenshot({ path: path.join(out, "popup-360.png") });
@@ -114,12 +124,24 @@ try {
   note(`popup 200% ${JSON.stringify(popupZoom)}`);
   if (!popupZoom.ok) fail(`主弹窗 200% 缩放失败: ${popupZoom.message || ""}`);
   await popup.screenshot({ path: path.join(out, "popup-200.png") });
+  note(`popup zoom2 on 1600 ${JSON.stringify(await readZoom(popup, sw))}`);
+  await zoomTo(popup, sw, 1);
+  await popup.setViewportSize({ width: 360, height: 640 });
+  const popupZoom360 = await zoomTo(popup, sw, 2);
+  const popupMetrics360 = await readZoom(popup, sw);
+  note(`popup zoom2 on 360x640 ${JSON.stringify({ popupZoom360, popupMetrics360 })}`);
+  await popup.screenshot({ path: path.join(out, "popup-zoom2-on-360.png") });
   await zoomTo(popup, sw, 1);
 
   const page = await context.newPage();
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto(pageUrl);
   await page.waitForTimeout(400);
+  await page.keyboard.press("Alt+Shift+I");
+  await page.keyboard.press("Alt+Shift+Y");
+  await page.waitForTimeout(300);
+  if (await page.locator("#yifan-input").count()) fail("未绑定的 Alt+Shift+I/Y 打开了输入浮窗");
+  note("fresh Y/I did not open input");
   const opened = await sw.evaluate(async (url) => {
     const tabs = await chrome.tabs.query({});
     const tab = tabs.find((item) => item.url === url);
@@ -228,8 +250,17 @@ try {
   note(`input 200% narrow ${JSON.stringify(narrowZoom)}`);
   if (!narrowZoom.ok) fail(`窄视口 200% 缩放失败`);
   await page.waitForTimeout(250);
-  await measure("200%-narrow");
-  await page.screenshot({ path: path.join(out, "input-200-narrow.png") });
+  const zoom720 = await readZoom(page, sw);
+  note(`zoom2 on 720 window ${JSON.stringify(zoom720)}`);
+  await measure("zoom2-on-720");
+  await page.screenshot({ path: path.join(out, "input-zoom2-on-720.png") });
+  await zoomTo(page, sw, 1);
+  await page.setViewportSize({ width: 360, height: 640 });
+  const zoom360 = await zoomTo(page, sw, 2);
+  const metrics360 = await readZoom(page, sw);
+  note(`zoom2 on 360x640 ${JSON.stringify({ zoom360, metrics360 })}`);
+  await page.screenshot({ path: path.join(out, "input-zoom2-on-360.png") });
+  await measure("zoom2-on-360");
   await zoomTo(page, sw, 1);
   await page.setViewportSize({ width: 1280, height: 800 });
 
@@ -282,6 +313,30 @@ try {
   await writeFile(path.join(out, "bounds-log.txt"), `${log.join("\n")}\n`);
   if (!contextClosed.done) await context.close().catch(() => undefined);
   server.close();
+}
+
+async function readZoom(page, sw) {
+  const box = await page.evaluate(() => ({
+    innerWidth: window.innerWidth,
+    innerHeight: window.innerHeight,
+    outerWidth: window.outerWidth,
+    outerHeight: window.outerHeight,
+    devicePixelRatio: window.devicePixelRatio,
+    visual: {
+      width: window.visualViewport?.width ?? null,
+      height: window.visualViewport?.height ?? null,
+      scale: window.visualViewport?.scale ?? null,
+      offsetLeft: window.visualViewport?.offsetLeft ?? null,
+      offsetTop: window.visualViewport?.offsetTop ?? null,
+    },
+  }));
+  const zoom = await sw.evaluate(async (url) => {
+    const tabs = await chrome.tabs.query({});
+    const tab = tabs.find((item) => item.url === url);
+    if (!tab?.id) return null;
+    return chrome.tabs.getZoom(tab.id);
+  }, page.url());
+  return { ...box, chromeZoom: zoom };
 }
 
 async function zoomTo(page, sw, factor) {
