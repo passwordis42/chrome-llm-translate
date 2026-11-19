@@ -1,9 +1,10 @@
-import { pairLabel, TARGET_LANGUAGES } from "../lib/languages.ts";
+import { TARGET_LANGUAGES, languageByCode, shortLabel } from "../lib/languages.ts";
 import { classifySelection, cleanSelection } from "../lib/selection.ts";
 import type { Settings } from "../lib/settings.ts";
 import { copyText, el, markImg, mount, selectionRect } from "./dom.ts";
 import { computeFloatPosition } from "../lib/layout.ts";
 import { requestTranslation, type StreamError } from "./session.ts";
+import { detectionBook, directionOf, rememberDetection } from "./detect-state.ts";
 import {
   SELECTION_FLOAT_DEFAULT_WIDTH_CSS,
   SELECTION_FLOAT_ENLARGED_WIDTH_CSS,
@@ -85,6 +86,8 @@ export function openSelectionFloat(text: string): void {
   langRow?.setAttribute("hidden", "");
   refreshLang();
   clearError();
+  const stale = root?.querySelector<HTMLElement>(".dir-note");
+  if (stale) stale.hidden = true;
   dstNode.textContent = "";
   dstNode.classList.add("live");
   setActions("translate");
@@ -138,6 +141,9 @@ function ensure(): void {
   errBody = el("span");
   errNode.append(errTitle, errBody);
   shell.pair.append(srcNode, dstNode, errNode);
+  const note = el("p", "dir-note");
+  note.hidden = true;
+  shell.tip.append(note);
 
   langRow = el("div", "lang-row");
   langRow.hidden = true;
@@ -215,9 +221,28 @@ function paint(layout: SelectionFloatLayout): void {
 function refreshLang(): void {
   if (!langNode || !deps) return;
   const settings = deps.getSettings();
-  langNode.textContent = pairLabel(settings.sourceLang, settings.targetLang, activeText);
+  const direction = directionOf(settings);
+  const code = detectionBook.usableCode(direction, "selection", activeText);
+  const left = settings.sourceLang === "auto"
+    ? (code ? `自动识别 · ${languageByCode(code)?.short ?? code}` : "自动识别")
+    : shortLabel(settings.sourceLang);
+  langNode.textContent = `${left} → ${shortLabel(settings.targetLang)}`;
   const select = root?.querySelector("select");
   if (select) select.value = settings.targetLang;
+}
+
+export function abandonSelectionResult(): void {
+  if (!host || !dstNode) return;
+  runId += 1;
+  abort?.abort();
+  abort = null;
+  dstNode.classList.remove("live");
+  refreshLang();
+  const note = root?.querySelector<HTMLElement>(".dir-note");
+  if (note && dstNode.textContent?.trim()) {
+    note.hidden = false;
+    note.textContent = "译文仍是上一方向，未自动重译。";
+  }
 }
 
 async function translate(): Promise<void> {
@@ -227,15 +252,18 @@ async function translate(): Promise<void> {
   const controller = new AbortController();
   abort = controller;
   const settings = deps.getSettings();
+  const direction = directionOf(settings);
+  const sourceText = activeText;
+  const detectToken = detectionBook.begin("selection", "selection", sourceText, direction);
   clearError();
   dstNode.textContent = "";
   dstNode.classList.add("live");
   setActions("translate");
   refreshLang();
   try {
-    await requestTranslation(
-      activeText,
-      { sourceLang: settings.sourceLang, targetLang: settings.targetLang },
+    const detected = await requestTranslation(
+      sourceText,
+      direction,
       {
         signal: controller.signal,
         onText: (text) => {
@@ -247,10 +275,15 @@ async function translate(): Promise<void> {
         },
       },
     );
-    if (token !== runId || !dstNode) return;
+    if (token !== runId || !dstNode) {
+      detectionBook.drop(detectToken);
+      return;
+    }
     dstNode.classList.remove("live");
+    rememberDetection(sourceText, direction, detectToken, detected.detection, detected.code);
     syncContentBounds();
   } catch (error) {
+    detectionBook.drop(detectToken);
     if (token !== runId) return;
     if ((error as Error).name === "AbortError") return;
     dstNode?.classList.remove("live");

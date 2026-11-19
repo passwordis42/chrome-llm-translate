@@ -1,6 +1,6 @@
 /** 扩展自己记住的三条快捷键。展示和改键以这里为准，不读 chrome.commands。 */
 
-export const SHORTCUT_IDS = ["page", "crop", "selection"] as const;
+export const SHORTCUT_IDS = ["page", "crop", "selection", "swap", "input"] as const;
 
 export type ShortcutId = (typeof SHORTCUT_IDS)[number];
 
@@ -8,12 +8,16 @@ export const SHORTCUT_LABELS: Record<ShortcutId, string> = {
   page: "整页开始/继续",
   crop: "截图识译",
   selection: "划词翻译开/关",
+  swap: "互换语言方向",
+  input: "打开输入翻译",
 };
 
 export interface ManagedShortcuts {
   page: string;
   crop: string;
   selection: string;
+  swap: string;
+  input: string;
 }
 
 export interface Chord {
@@ -38,6 +42,8 @@ export const DEFAULT_SHORTCUTS: ManagedShortcuts = {
   page: "Alt+T",
   crop: "Alt+S",
   selection: "Alt+E",
+  swap: "",
+  input: "",
 };
 
 const NAMED_KEYS = [
@@ -136,6 +142,7 @@ export function matchShortcut(event: KeySnapshot, shortcuts: ManagedShortcuts): 
   if (!chord) return null;
   const formatted = formatChord(chord);
   for (const id of SHORTCUT_IDS) {
+    if (!shortcuts[id]) continue;
     if (shortcuts[id] === formatted) return id;
   }
   return null;
@@ -181,8 +188,9 @@ export function restoreDefaultShortcuts(): ManagedShortcuts {
 }
 
 /**
- * 缺槽、写坏、或和前面的槽撞车时，用还没被占用的默认键补上。
- * 三条默认互不冲突；补完后仍然互不相同。
+ * 旧三键缺槽时补 Alt+T/S/E。互换和输入缺槽时保持空绑定。
+ * 存储里已经写上的组合键原样保留，包括恰好是 Alt+Shift+Y / Alt+Shift+I 的值。
+ * 没有来源字段，不能把已存的候选键当成草稿自动写入而清掉。
  */
 export function normalizeShortcuts(raw: unknown): ManagedShortcuts {
   const defaults = defaultShortcuts();
@@ -197,7 +205,12 @@ export function normalizeShortcuts(raw: unknown): ManagedShortcuts {
       used.add(formatted);
       continue;
     }
-    const free = SHORTCUT_IDS.map((slot) => defaults[slot]).find((value) => !used.has(value)) ?? defaults[id];
+    if (id === "swap" || id === "input") {
+      next[id] = "";
+      continue;
+    }
+    const legacyDefaults = [defaults.page, defaults.crop, defaults.selection];
+    const free = legacyDefaults.find((value) => value && !used.has(value)) ?? defaults[id];
     next[id] = free;
     used.add(free);
   }
@@ -212,6 +225,16 @@ export function shortcutsStorageMatches(raw: unknown, normalized: ManagedShortcu
 
 export function formatHotkeyTip(shortcuts: ManagedShortcuts): string {
   return `${shortcuts.page} 整页 · ${shortcuts.crop} 识译 · ${shortcuts.selection} 划词 · 右键 ⌝/⌟/⌞`;
+}
+
+function pageKeyPhrase(label: string, chord: string): string {
+  if (!chord) return `${label}未绑定，请用按钮`;
+  return `${label}已保存 ${chord}。普通网页会监听这个键；与浏览器或输入法是否冲突尚未验证，未验证前请用按钮`;
+}
+
+/** 空绑定写未绑定。已保存的键写出实际组合，并标明冲突尚未验证。 */
+export function formatPageHotkeyNote(shortcuts: ManagedShortcuts): string {
+  return `${pageKeyPhrase("互换", shortcuts.swap)}。${pageKeyPhrase("输入翻译", shortcuts.input)}。可在扩展设置改键。不是浏览器命令，也不是系统全局热键。`;
 }
 
 export function createShortcutGate(windowMs = 350): (action: ShortcutId, now?: number) => boolean {

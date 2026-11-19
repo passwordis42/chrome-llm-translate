@@ -1,4 +1,4 @@
-export type TranslateErrorCode = "no_key" | "auth" | "network" | "quota" | "empty" | "unknown";
+export type TranslateErrorCode = "no_key" | "auth" | "network" | "quota" | "empty" | "protocol" | "unknown";
 
 export class TranslateError extends Error {
   readonly code: TranslateErrorCode;
@@ -91,6 +91,16 @@ export function emptyCompletionError(where: TranslateSurface): TranslateError {
 
 export function noTextError(): TranslateError {
   return new TranslateError("empty", "识译失败", "这一块没有识别出文字。不会假翻。", true);
+}
+
+export function protocolTranslateError(where: TranslateSurface): TranslateError {
+  const title = where === "ocr" ? "识译失败" : where === "settings" ? "连接失败" : "翻译失败";
+  return new TranslateError(
+    "protocol",
+    title,
+    "协议错误：响应缺头、非法代码、超长或被截断。未展示译文，也未记为识别成功。不会自动重试。不会假翻。",
+    true,
+  );
 }
 
 export function tooLongError(): TranslateError {

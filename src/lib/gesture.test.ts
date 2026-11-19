@@ -342,7 +342,7 @@ describe("shortcut commands", () => {
     assert.match(popup, /启用鼠标手势/);
     const home = popup.slice(popup.indexOf('id="home-view"'), popup.indexOf('id="settings-view"'));
     const settings = popup.slice(popup.indexOf('id="settings-view"'), popup.indexOf('id="glossary-view"'));
-    assert.equal(home.includes("源语言"), false);
+    assert.match(home, /源语言/);
     assert.equal(home.includes("划词模式"), false);
     assert.match(home, /划词翻译/);
     assert.match(home, /允许划选被禁文字/);

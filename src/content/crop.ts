@@ -20,6 +20,7 @@ import {
   type OcrPanelMount,
 } from "../lib/ocr-panel.ts";
 import { copyText, el, markImg, mount } from "./dom.ts";
+import { detectionBook, liveDirection } from "./detect-state.ts";
 
 let session = 0;
 let busy = false;
@@ -149,12 +150,30 @@ async function finishCrop(token: number, rect: CssRect): Promise<void> {
     const cropped = await cropToJpeg(captured.dataUrl, rect, view);
     if (token !== session) return;
     showPanel(token, { width, height, thumb: cropped, loading: true });
+    const directionBefore = liveDirection();
     const result = (await chrome.runtime.sendMessage({ type: "ocr-translate", imageDataUrl: cropped })) as
-      | { ok?: boolean; source?: string; translation?: string; title?: string; message?: string }
+      | { ok?: boolean; source?: string; translation?: string; title?: string; message?: string; detection?: string; code?: string }
       | undefined;
     if (token !== session) return;
     if (result?.ok && result.source && result.translation) {
       showPanel(token, { width, height, thumb: cropped, source: result.source, translation: result.translation });
+      const directionNow = liveDirection();
+      if (
+        directionBefore
+        && directionNow
+        && directionBefore.sourceLang === directionNow.sourceLang
+        && directionBefore.targetLang === directionNow.targetLang
+        && (result.detection === "code" || result.detection === "unknown")
+      ) {
+        const detectToken = detectionBook.begin("ocr", "ocr", result.source, directionNow);
+        detectionBook.commit(
+          detectToken,
+          result.source,
+          directionNow,
+          result.detection === "code" ? result.code ?? null : null,
+          result.detection === "unknown",
+        );
+      }
       return;
     }
     showPanel(token, {

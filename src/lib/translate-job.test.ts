@@ -51,6 +51,7 @@ describe("runTranslationJob", () => {
   it("asks the model to keep glossary tokens and restores them", async () => {
     const settings = defaultSettings();
     settings.apiKey = "sk-test-key";
+    settings.sourceLang = "en";
     settings.glossary = [{ id: "1", source: "large language model", target: "大语言模型" }];
     let requestUrl = "";
     let userText = "";
@@ -148,6 +149,7 @@ describe("runTranslationJob", () => {
   it("sends the saved model id for both selection and page jobs", async () => {
     const settings = defaultSettings();
     settings.apiKey = "sk-test-key";
+    settings.sourceLang = "en";
     settings.model = "qwen-plus";
     let sent = "";
     const fetchImpl: typeof fetch = async (_input, init) => {
@@ -247,6 +249,57 @@ describe("runTranslationJob", () => {
         return true;
       },
     );
+  });
+});
+
+describe("strict auto header", () => {
+  it("strips one legal header and does not fetch again when the header is missing", async () => {
+    const settings = defaultSettings();
+    settings.apiKey = "sk-test-key";
+    let calls = 0;
+    const fetchImpl: typeof fetch = async () => {
+      calls += 1;
+      return new Response(sseOf("没有头的正文"), { status: 200 });
+    };
+    await assert.rejects(
+      () =>
+        runTranslationJob({
+          text: "bonjour",
+          settings,
+          signal: new AbortController().signal,
+          onText: () => {
+            throw new Error("header must not leak");
+          },
+          fetchImpl,
+        }),
+      (error: unknown) => {
+        assert.ok(error instanceof TranslateError);
+        assert.equal(error.code, "protocol");
+        return true;
+      },
+    );
+    assert.equal(calls, 1);
+
+    calls = 0;
+    const okFetch: typeof fetch = async () => {
+      calls += 1;
+      return new Response(sseOf("YF1 fr\n法语译文"), { status: 200 });
+    };
+    let shown = "";
+    const detected = await runTranslationJob({
+      text: "bonjour",
+      settings,
+      signal: new AbortController().signal,
+      onText: (text) => {
+        shown = text;
+      },
+      fetchImpl: okFetch,
+    });
+    assert.equal(calls, 1);
+    assert.equal(shown, "法语译文");
+    assert.equal(detected.outcome, "code");
+    assert.equal(detected.code, "fr");
+    assert.equal(shown.includes("YF1"), false);
   });
 });
 

@@ -103,6 +103,7 @@ describe("recognize and translate", () => {
     const settings = defaultSettings();
     settings.apiKey = "sk-test-key";
     settings.model = "qwen3.7-plus";
+    settings.sourceLang = "en";
     settings.targetLang = "zh";
     const models: string[] = [];
     const fetchImpl: typeof fetch = async (_input, init) => {

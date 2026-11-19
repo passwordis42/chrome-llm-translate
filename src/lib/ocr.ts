@@ -113,7 +113,7 @@ export async function recognizeAndTranslate(opts: {
   settings: Settings;
   signal: AbortSignal;
   fetchImpl?: typeof fetch;
-}): Promise<{ source: string; translation: string }> {
+}): Promise<{ source: string; translation: string; detection: "code" | "unknown" | "plain" | "legacy" | "none"; code: string }> {
   if (!isImageDataUrl(opts.imageDataUrl)) {
     throw new TranslateError("unknown", "识译失败", "选区图片太大或无效。没有改动页面。不会假翻。", true);
   }
@@ -139,8 +139,10 @@ export async function recognizeAndTranslate(opts: {
   const parsed = parseOcrText(recognized);
   if (!parsed.ok) throw noTextError();
   let translation = "";
+  let detection: "code" | "unknown" | "plain" | "legacy" | "none" = "none";
+  let code = "";
   try {
-    await runTranslationJob({
+    const detected = await runTranslationJob({
       text: parsed.text,
       settings: opts.settings,
       signal: opts.signal,
@@ -149,13 +151,17 @@ export async function recognizeAndTranslate(opts: {
         translation = text;
       },
     });
+    detection = detected.outcome === "code" || detected.outcome === "unknown" || detected.outcome === "plain" || detected.outcome === "legacy"
+      ? detected.outcome
+      : "none";
+    code = detected.code ?? "";
   } catch (error) {
     if (error instanceof TranslateError) throw new OcrTranslateError(parsed.text, error);
     throw error;
   }
   const finalText = translation.trim();
   if (!finalText) throw new TranslateError("empty", "识译失败", "没有得到译文。不会假翻。", true);
-  return { source: parsed.text, translation: finalText };
+  return { source: parsed.text, translation: finalText, detection, code };
 }
 
 export function ocrTargetLabel(targetLang: string): string {
