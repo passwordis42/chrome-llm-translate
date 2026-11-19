@@ -37,6 +37,20 @@ let run = 0;
 let currentAbort: AbortController | null = null;
 let resultDirection: { sourceLang: string; targetLang: string } | null = null;
 let onViewport: (() => void) | null = null;
+let textRevision = 0;
+let shownRevision = -1;
+let hasSubmission = false;
+
+const INPUT_TEXT_STALE = "原文已更改，先前译文已失效。请重新翻译。不会自动发送请求。";
+const INPUT_DIRECTION_STALE = "方向已改变，先前译文已失效。请重新翻译。不会自动发送请求。";
+
+interface InputSnapshot {
+  text: string;
+  direction: { sourceLang: string; targetLang: string };
+  entry: "input";
+  requestId: number;
+  textRevision: number;
+}
 
 export function initInputFloat(next: InputFloatDeps): void {
   deps = next;
@@ -62,19 +76,30 @@ export function openInputFloat(): void {
 
 export function closeInputFloat(): void {
   run += 1;
+  textRevision += 1;
+  hasSubmission = false;
+  currentAbort?.abort();
+  currentAbort = null;
+  detectionBook.invalidateText("input", "input", "");
   unbindViewport();
   host?.remove();
   host = null;
   root = null;
   field = null;
+  output = null;
+  copyButton = null;
   busy = false;
 }
 
 export function cancelInputTranslation(): void {
   run += 1;
+  textRevision += 1;
   currentAbort?.abort();
   currentAbort = null;
   busy = false;
+  detectionBook.invalidateText("input", "input", "");
+  clearShownTranslation(hasSubmission && field?.value.trim() ? INPUT_DIRECTION_STALE : null);
+  hasSubmission = false;
   refreshInputFloat();
 }
 
@@ -161,10 +186,16 @@ function ensure(): void {
   field.rows = 5;
   field.style.resize = "none";
   field.addEventListener("input", () => {
-    const settings = deps?.getSettings();
-    if (!settings || !field) return;
+    if (!field) return;
+    textRevision += 1;
+    currentAbort?.abort();
     detectionBook.invalidateText("input", "input", field.value);
-    resultDirection = null;
+    if (!hasSubmission) {
+      renderChrome();
+      return;
+    }
+    busy = false;
+    clearShownTranslation(field.value.trim() ? INPUT_TEXT_STALE : null);
     renderChrome();
   });
   field.addEventListener("keydown", (event) => {
@@ -185,8 +216,10 @@ function ensure(): void {
   copyButton.type = "button";
   copyButton.hidden = true;
   copyButton.addEventListener("click", () => {
-    const text = output?.querySelector(".btext")?.textContent?.trim() ?? "";
-    if (text) void copyText(text);
+    if (!output || output.hidden || shownRevision !== textRevision) return;
+    const text = output.querySelector(".btext")?.textContent?.trim() ?? "";
+    if (!text) return;
+    void copyText(text);
   });
   translateButton = el("button", "btn primary", "翻译");
   translateButton.type = "button";
@@ -376,46 +409,76 @@ function markStaleIfNeeded(): void {
   }
 }
 
+function currentSnapshot(snapshot: InputSnapshot): boolean {
+  return snapshot.requestId === run && snapshot.textRevision === textRevision;
+}
+
+function clearShownTranslation(message: string | null): void {
+  shownRevision = -1;
+  resultDirection = null;
+  if (output) {
+    output.hidden = true;
+    output.replaceChildren();
+    output.classList.remove("is-stale");
+  }
+  if (copyButton) copyButton.hidden = true;
+  if (!status) return;
+  if (message) {
+    status.hidden = false;
+    status.textContent = message;
+  } else {
+    status.hidden = true;
+    status.textContent = "";
+  }
+}
+
 async function submit(): Promise<void> {
   if (!deps || !field || !output || !status || !translateButton || !copyButton || busy) return;
   const text = field.value.trim();
   if (!text) return;
   const settings = deps.getSettings();
-  const direction = directionOf(settings);
+  const direction = { ...directionOf(settings) };
   const token = ++run;
+  const snapshot: InputSnapshot = {
+    text,
+    direction,
+    entry: "input",
+    requestId: token,
+    textRevision,
+  };
   currentAbort?.abort();
   const controller = new AbortController();
   currentAbort = controller;
-  const detectToken = detectionBook.begin("input", "input", field.value, direction);
+  const detectToken = detectionBook.begin(snapshot.entry, "input", snapshot.text, snapshot.direction);
   busy = true;
-  resultDirection = null;
-  output.hidden = true;
-  output.replaceChildren();
-  output.classList.remove("is-stale");
-  copyButton.hidden = true;
+  hasSubmission = true;
+  clearShownTranslation(null);
   status.hidden = false;
   status.textContent = "正在翻译…";
   renderChrome();
   let partial = "";
   try {
-    const detected = await requestTranslation(text, direction, {
+    const detected = await requestTranslation(snapshot.text, snapshot.direction, {
       signal: controller.signal,
       onText: (next) => {
-        if (token !== run) return;
+        if (!currentSnapshot(snapshot)) return;
         partial = next;
         showBody(next, false);
       },
     });
-    if (token !== run) {
+    if (!currentSnapshot(snapshot)) {
       detectionBook.drop(detectToken);
       return;
     }
     showBody(partial, false);
-    resultDirection = direction;
+    resultDirection = snapshot.direction;
     status.hidden = true;
-    rememberDetection(field.value, direction, detectToken, detected.detection, detected.code);
+    rememberDetection(snapshot.text, snapshot.direction, detectToken, detected.detection, detected.code);
   } catch (error) {
-    if (token !== run) return;
+    if (!currentSnapshot(snapshot)) {
+      detectionBook.drop(detectToken);
+      return;
+    }
     detectionBook.drop(detectToken);
     const streamError = error as StreamError;
     const protocol = streamError.message?.includes("协议错误") === true;
@@ -424,22 +487,15 @@ async function submit(): Promise<void> {
       status.hidden = false;
       status.textContent = INCOMPLETE_TEXT;
     } else if (protocol) {
-      output.hidden = true;
-      output.replaceChildren();
-      copyButton.hidden = true;
-      status.hidden = false;
-      status.textContent = PROTOCOL_ERROR_TEXT;
+      clearShownTranslation(PROTOCOL_ERROR_TEXT);
     } else if (streamError.name !== "AbortError") {
-      output.hidden = true;
-      output.replaceChildren();
-      copyButton.hidden = true;
-      status.hidden = false;
-      status.textContent = streamError.message || "翻译失败。原文已保留。不会假翻。";
+      clearShownTranslation(streamError.message || "翻译失败。原文已保留。不会假翻。");
     }
   } finally {
-    if (token === run) {
+    if (snapshot.requestId === run) {
       busy = false;
-      renderChrome();
+      if (currentSnapshot(snapshot)) renderChrome();
+      else if (translateButton) translateButton.disabled = false;
     }
   }
 }
@@ -452,5 +508,6 @@ function showBody(text: string, incomplete: boolean): void {
   const label = el("div", "blabel", incomplete ? "译文（未完成）" : "译文");
   const body = el("div", "btext", text);
   output.append(label, body);
+  shownRevision = textRevision;
   copyButton.hidden = !text.trim();
 }

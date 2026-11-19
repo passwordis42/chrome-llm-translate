@@ -110,11 +110,12 @@ export function createDetectionBook(): DetectionBook {
     },
     invalidateText(entry, scopeId, text) {
       const record = records.get(key(entry, scopeId));
-      if (!record || record.text === text) return;
+      if (!record) return;
+      if (record.text === text && record.usable) return;
       record.usable = false;
       record.code = null;
       record.unknown = false;
-      record.text = text;
+      record.token = -1;
     },
     usableCode(direction, entry, text) {
       const found = latest(records, direction, entry, text);

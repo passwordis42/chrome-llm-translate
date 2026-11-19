@@ -64,6 +64,9 @@ describe("detection binding", () => {
     book.invalidateText("page", "b1", "明日");
     assert.equal(book.usableCode(autoZh, "page", "今日"), null);
     book.commit(first, "今日", autoZh, "ja", false);
+    book.commit(first, "明日", autoZh, "ja", false);
+    assert.equal(book.usableCode(autoZh, "page", "今日"), null);
+    assert.equal(book.usableCode(autoZh, "page", "明日"), null);
     book.invalidateDirection({ sourceLang: "zh", targetLang: "ja" });
     assert.equal(book.usableCode(autoZh, "page", "今日"), null);
   });
@@ -94,6 +97,19 @@ describe("detection binding", () => {
     if (!next.ok) return;
     assert.equal(next.sourceLang, "zh");
     assert.equal(next.targetLang, "zh");
+  });
+
+  it("does not bind a late input result to the edited text or restore the old text", () => {
+    const book = createDetectionBook();
+    const token = book.begin("input", "input", "TEXT-A", autoZh);
+    book.invalidateText("input", "input", "TEXT-B");
+    book.commit(token, "TEXT-B", autoZh, "ja", false);
+    book.commit(token, "TEXT-A", autoZh, "ja", false);
+    assert.equal(book.usableCode(autoZh, "input", "TEXT-B"), null);
+    assert.equal(book.usableCode(autoZh, "input", "TEXT-A"), null);
+    book.invalidateText("input", "input", "TEXT-A");
+    assert.equal(book.usableCode(autoZh, "input", "TEXT-A"), null);
+    assert.match(book.hint(autoZh, "input", "TEXT-B"), /原文已更改/);
   });
 
   it("does not let a late token revive a newer request", () => {
