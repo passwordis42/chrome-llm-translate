@@ -91,6 +91,12 @@ try {
       selectionEnabled: true,
       glossary: [],
     };
+    current.apiKey = "";
+    if (current.providers && typeof current.providers === "object") {
+      for (const slot of Object.values(current.providers)) {
+        if (slot && typeof slot === "object") slot.apiKey = "";
+      }
+    }
     current.selectionMode = "confirm";
     current.selectionEnabled = true;
     await chrome.storage.local.set({ "yifan.settings.v1": current });
@@ -101,7 +107,7 @@ try {
   if (await page.locator("#yifan-select-confirm").count()) fail("旧的先确认字段仍先出确认条");
   const immediateText = await shadowText(page, "yifan-float");
   if (!immediateText.includes("Unimportant pages")) fail(`旧确认字段下没有直接翻: ${immediateText}`);
-  if (!immediateText.includes("不会假翻")) fail("旧确认字段下不该假翻");
+  if (!immediateText.includes("不会假翻")) fail(`旧确认字段下不该假翻: ${immediateText}`);
   const cleanedMode = await sw.evaluate(async () => {
     const deadline = Date.now() + 4000;
     while (Date.now() < deadline) {
@@ -335,7 +341,7 @@ try {
   }
   if (banner.includes("假译文") || banner.includes("Hello")) fail("测试连接不该返回译文");
   await popup.getByRole("button", { name: "保存" }).click();
-  await popup.getByText("已保存").waitFor();
+  await popup.locator("#ok-title", { hasText: "已保存" }).waitFor();
 
   await popup.getByRole("button", { name: "返回主弹窗" }).click();
   await popup.getByRole("button", { name: /术语本/ }).click();
