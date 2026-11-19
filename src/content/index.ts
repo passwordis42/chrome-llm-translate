@@ -2,7 +2,7 @@ import { dismissConfirm, isConfirmOpen, showConfirm, showNotice } from "./confir
 import { dismissOcrUi, isOcrUiActive, startCrop } from "./crop.ts";
 import { isYifanEvent } from "./dom.ts";
 import { abandonSelectionResult, closeSelectionFloat, currentFloatText, initFloat, isFloatOpen, openSelectionFloat, repositionFloat } from "./float.ts";
-import { cancelInputTranslation, closeInputFloat, initInputFloat, inputFloatText, isInputFloatOpen, openInputFloat, refreshInputFloat } from "./input-float.ts";
+import { cancelInputTranslation, closeInputFloat, initInputFloat, inputFloatDetectionText, inputFloatText, isInputFloatOpen, openInputFloat, refreshInputFloat } from "./input-float.ts";
 import { bindDirectionReader, detectionBook, directionOf } from "./detect-state.ts";
 import { mountPageGesture } from "./gesture.ts";
 import { clearInlinePage, initPage, invalidatePageForDirectionChange, isInlinePageOpen, pageStatus, startInlinePage, stopInlinePage, syncToolbarPair } from "./pageview.ts";
@@ -294,9 +294,12 @@ function boot(): void {
   function directionStatus(): { ok: true; canSwap: boolean; message: string; code: string } {
     const direction = directionOf(settings);
     const context = swapContext();
-    const code = context
-      ? detectionBook.usableCode(direction, context.entry, context.text)
-      : detectionBook.usableCode(direction);
+    let code: string | null;
+    if (!context) code = detectionBook.usableCode(direction);
+    else if (context.entry === "input") {
+      const bound = inputFloatDetectionText();
+      code = bound == null ? null : detectionBook.usableCode(direction, "input", bound);
+    } else code = detectionBook.usableCode(direction, context.entry, context.text);
     const decision = swapDirection(direction, code);
     return { ok: true, canSwap: decision.ok, message: decision.ok ? "" : decision.message, code: code ?? "" };
   }

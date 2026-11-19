@@ -40,6 +40,8 @@ let onViewport: (() => void) | null = null;
 let textRevision = 0;
 let shownRevision = -1;
 let hasSubmission = false;
+let boundText: string | null = null;
+let boundRevision = -1;
 
 const INPUT_TEXT_STALE = "原文已更改，先前译文已失效。请重新翻译。不会自动发送请求。";
 const INPUT_DIRECTION_STALE = "方向已改变，先前译文已失效。请重新翻译。不会自动发送请求。";
@@ -64,6 +66,12 @@ export function inputFloatText(): string {
   return field?.value ?? "";
 }
 
+/** 只有仍处在提交时的修订，才返回那次请求的正文。改过字之后返回 null。 */
+export function inputFloatDetectionText(): string | null {
+  if (boundText == null || boundRevision !== textRevision) return null;
+  return boundText;
+}
+
 export function openInputFloat(): void {
   ensure();
   if (!host || !field) return;
@@ -78,6 +86,8 @@ export function closeInputFloat(): void {
   run += 1;
   textRevision += 1;
   hasSubmission = false;
+  boundText = null;
+  boundRevision = -1;
   currentAbort?.abort();
   currentAbort = null;
   detectionBook.invalidateText("input", "input", "");
@@ -94,6 +104,8 @@ export function closeInputFloat(): void {
 export function cancelInputTranslation(): void {
   run += 1;
   textRevision += 1;
+  boundText = null;
+  boundRevision = -1;
   currentAbort?.abort();
   currentAbort = null;
   busy = false;
@@ -187,16 +199,7 @@ function ensure(): void {
   field.style.resize = "none";
   field.addEventListener("input", () => {
     if (!field) return;
-    textRevision += 1;
-    currentAbort?.abort();
-    detectionBook.invalidateText("input", "input", field.value);
-    if (!hasSubmission) {
-      renderChrome();
-      return;
-    }
-    busy = false;
-    clearShownTranslation(field.value.trim() ? INPUT_TEXT_STALE : null);
-    renderChrome();
+    noteInputEdited();
   });
   field.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
@@ -243,8 +246,9 @@ function ensure(): void {
     const settings = deps?.getSettings();
     if (!settings || !field) return;
     const direction = directionOf(settings);
-    const code = detectionBook.usableCode(direction, "input", field.value);
-    const next = swapDirection(direction, code);
+    const code = inputFloatDetectionText();
+    const detected = code == null ? null : detectionBook.usableCode(direction, "input", code);
+    const next = swapDirection(direction, detected);
     if (!next.ok) {
       renderChrome();
       return;
@@ -368,8 +372,8 @@ function renderChrome(): void {
   const settings = deps?.getSettings();
   if (!settings || !chip || !hint || !pill || !swapButton || !zoomButton) return;
   const direction = directionOf(settings);
-  const text = field?.value ?? "";
-  const code = detectionBook.usableCode(direction, "input", text);
+  const text = inputFloatDetectionText();
+  const code = text == null ? null : detectionBook.usableCode(direction, "input", text);
   const left = settings.sourceLang === "auto"
     ? (code ? `自动识别 · ${languageByCode(code)?.short ?? code}` : "自动识别")
     : shortLabel(settings.sourceLang);
@@ -385,7 +389,7 @@ function renderChrome(): void {
     pill.hidden = true;
     pill.textContent = "";
   }
-  const message = settings.sourceLang === "auto" ? detectionBook.hint(direction, "input", text) : "";
+  const message = settings.sourceLang === "auto" ? detectionBook.hint(direction, "input", text ?? field?.value ?? "") : "";
   hint.hidden = !message;
   hint.textContent = message;
   const enabled = swapDirection(direction, code).ok;
@@ -407,6 +411,22 @@ function markStaleIfNeeded(): void {
     status.hidden = false;
     status.textContent = "方向已改变。这是上一方向的译文，没有自动重译。";
   }
+}
+
+function noteInputEdited(): void {
+  if (!field) return;
+  textRevision += 1;
+  boundText = null;
+  boundRevision = -1;
+  currentAbort?.abort();
+  detectionBook.invalidateText("input", "input", field.value);
+  if (!hasSubmission) {
+    renderChrome();
+    return;
+  }
+  busy = false;
+  clearShownTranslation(field.value.trim() ? INPUT_TEXT_STALE : null);
+  renderChrome();
 }
 
 function currentSnapshot(snapshot: InputSnapshot): boolean {
@@ -452,6 +472,8 @@ async function submit(): Promise<void> {
   const detectToken = detectionBook.begin(snapshot.entry, "input", snapshot.text, snapshot.direction);
   busy = true;
   hasSubmission = true;
+  boundText = null;
+  boundRevision = -1;
   clearShownTranslation(null);
   status.hidden = false;
   status.textContent = "正在翻译…";
@@ -474,6 +496,8 @@ async function submit(): Promise<void> {
     resultDirection = snapshot.direction;
     status.hidden = true;
     rememberDetection(snapshot.text, snapshot.direction, detectToken, detected.detection, detected.code);
+    boundText = snapshot.text;
+    boundRevision = snapshot.textRevision;
   } catch (error) {
     if (!currentSnapshot(snapshot)) {
       detectionBook.drop(detectToken);

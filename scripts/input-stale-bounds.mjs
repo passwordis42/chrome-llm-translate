@@ -121,6 +121,7 @@ try {
       const pill = root.querySelector(".input-pill");
       const pillText = pill && !pill.hidden ? pill.textContent ?? "" : "";
       const value = root.querySelector("textarea")?.value ?? "";
+      const swap = root.querySelector(".input-swap");
       let clip = "sentinel";
       try {
         await navigator.clipboard.writeText("sentinel");
@@ -139,6 +140,7 @@ try {
         pillText,
         value,
         copyVisible: Boolean(copyButton && !copyButton.hidden),
+        swapDisabled: Boolean(swap?.disabled),
         clip,
       };
     });
@@ -306,6 +308,67 @@ try {
   if (reopened.pillText) fail("关窗重开后恢复了识别");
   if ((await fetches()) !== fetchesBeforeReopen) fail("重开或填回旧原文触发了请求");
   await page.screenshot({ path: path.join(out, "pass-reopen.png") });
+
+  async function setExact(value) {
+    await page.evaluate((next) => {
+      const area = document.getElementById("yifan-input")?.shadowRoot?.querySelector("textarea");
+      if (!area) throw new Error("没有文本框");
+      area.focus();
+      area.value = next;
+      area.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    }, value);
+  }
+
+  const beforeHello = await fetches();
+  await setExact("hello\n");
+  await float.getByRole("button", { name: "翻译", exact: true }).click();
+  await page.waitForTimeout(1200);
+  const helloDone = await readUi("hello-newline-done");
+  if (!helloDone.body.includes("译文A") || !helloDone.copyVisible) fail("带换行提交后没有可复制的译文");
+  if (!helloDone.pillText.includes("日语") || helloDone.swapDisabled) fail("当前修订没有用提交正文显示识别和互换");
+  if ((await fetches()) !== beforeHello + 1) fail("带换行提交的请求数不对");
+  await page.screenshot({ path: path.join(out, "pass-hello-newline.png") });
+
+  await setExact("hello");
+  await page.waitForTimeout(250);
+  const helloTrimmed = await readUi("hello-delete-newline");
+  assertNoOld("hello-delete-newline", helloTrimmed, "译文A");
+  if (!helloTrimmed.swapDisabled) fail("删掉末尾换行后互换被恢复");
+  if ((await fetches()) !== beforeHello + 1) fail("删换行触发了请求");
+  await page.screenshot({ path: path.join(out, "pass-hello-trimmed.png") });
+
+  await setExact("hello\n");
+  await page.waitForTimeout(250);
+  const helloRestored = await readUi("hello-restore-newline");
+  assertNoOld("hello-restore-newline", helloRestored, "译文A");
+  if (!helloRestored.swapDisabled) fail("改回带换行的原文后互换被恢复");
+  if ((await fetches()) !== beforeHello + 1) fail("改回原文触发了请求");
+
+  const beforeSpace = await fetches();
+  await setExact("  hello  ");
+  await float.getByRole("button", { name: "翻译", exact: true }).click();
+  await page.waitForTimeout(1200);
+  const spaced = await readUi("hello-spaces-done");
+  if (!spaced.pillText.includes("日语") || spaced.swapDisabled) fail("首尾空格的当前修订没有识别");
+  await setExact("hello");
+  await page.waitForTimeout(250);
+  const spacesGone = await readUi("hello-spaces-deleted");
+  assertNoOld("hello-spaces-deleted", spacesGone, "译文A");
+  if (!spacesGone.swapDisabled) fail("删掉首尾空格后互换被恢复");
+  if ((await fetches()) !== beforeSpace + 1) fail("删空格触发了请求");
+
+  const beforePending = await fetches();
+  await setExact("\nhello\n");
+  await float.getByRole("button", { name: "翻译", exact: true }).click();
+  await page.waitForTimeout(80);
+  await setExact("hello");
+  if ((await fetches()) !== beforePending + 1) fail("pending 时删换行触发了新请求");
+  await page.waitForTimeout(1200);
+  const pendingTrim = await readUi("hello-pending-trim");
+  assertNoOld("hello-pending-trim", pendingTrim, "译文A");
+  if (!pendingTrim.swapDisabled) fail("pending 的 trim 等价编辑恢复了互换");
+  if ((await fetches()) !== beforePending + 1) fail("迟到响应补发了请求");
+  await page.screenshot({ path: path.join(out, "pass-pending-trim.png") });
 
   await writeFile(path.join(out, "stale-bounds.json"), JSON.stringify(report, null, 2));
   note("stale bounds ok");

@@ -109,9 +109,9 @@ export function createDetectionBook(): DetectionBook {
       }
     },
     invalidateText(entry, scopeId, text) {
+      void text;
       const record = records.get(key(entry, scopeId));
       if (!record) return;
-      if (record.text === text && record.usable) return;
       record.usable = false;
       record.code = null;
       record.unknown = false;

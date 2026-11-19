@@ -112,6 +112,18 @@ describe("detection binding", () => {
     assert.match(book.hint(autoZh, "input", "TEXT-B"), /原文已更改/);
   });
 
+  it("voids a trim-equivalent edit and does not restore that same text", () => {
+    const book = createDetectionBook();
+    const token = book.begin("input", "input", "hello", autoZh);
+    book.commit(token, "hello", autoZh, "ja", false);
+    assert.equal(book.usableCode(autoZh, "input", "hello"), "ja");
+    book.invalidateText("input", "input", "hello");
+    assert.equal(book.usableCode(autoZh, "input", "hello"), null);
+    book.commit(token, "hello", autoZh, "ja", false);
+    assert.equal(book.usableCode(autoZh, "input", "hello"), null);
+    assert.equal(book.usableCode(autoZh, "input", "hello\n"), null);
+  });
+
   it("does not let a late token revive a newer request", () => {
     const book = createDetectionBook();
     const oldToken = book.begin("input", "input", "hello", autoZh);
