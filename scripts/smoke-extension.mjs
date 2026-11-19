@@ -284,7 +284,7 @@ try {
   const selectionHint = (await popup.locator("#home-view .toggle-row .t-desc").first().innerText()).trim();
   if (selectionHint !== "选中文字后直接翻译") fail(`划词说明不对: ${selectionHint}`);
   if ((await popup.locator("#home-selection-toggle").getAttribute("aria-checked")) !== "true") fail("划词开关默认应开启");
-  if ((await popup.locator("#home-view .sub").innerText()).trim() !== "整页 AI · v0.1.14") fail("主弹窗版本不对");
+  if ((await popup.locator("#home-view .sub").innerText()).trim() !== "整页 AI · v0.1.15") fail("主弹窗版本不对");
   await popup.screenshot({ path: path.join(shots, "popup-home.png") });
   await popup.locator("#hotkey-tip").waitFor();
   const tip = (await popup.locator("#hotkey-tip").innerText()).replace(/\s+/g, " ");
@@ -316,7 +316,7 @@ try {
   if (settingsCopy.includes("划词模式") || settingsCopy.includes("先确认再翻") || settingsCopy.includes("划完即翻")) {
     fail(`设置页还留着划词模式: ${settingsCopy}`);
   }
-  if ((await popup.locator("#settings-view .sub").innerText()).trim() !== "快捷键 / API / 厂商 · v0.1.14") fail("设置页版本不对");
+  if ((await popup.locator("#settings-view .sub").innerText()).trim() !== "快捷键 / API / 厂商 · v0.1.15") fail("设置页版本不对");
   await popup.screenshot({ path: path.join(shots, "settings.png") });
   await popup.getByRole("button", { name: "测试连接" }).click();
   await popup.getByText("请先填写 API Key。不会假翻。").waitFor();
